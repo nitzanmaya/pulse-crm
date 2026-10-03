@@ -5,11 +5,11 @@ type InviteEmail = {
   to: string
   orgName: string
   inviterName: string
-  role: "admin" | "agent"
+  role: "admin" | "agent" | "viewer"
   token: string
 }
 
-const roleLabel = { admin: "מנהל/ת", agent: "נציג/ה" } as const
+const roleLabel = { admin: "מנהל/ת", agent: "נציג/ה", viewer: "צופה" } as const
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
