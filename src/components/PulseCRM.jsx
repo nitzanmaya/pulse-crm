@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   LayoutDashboard, SquareKanban, ChartColumn, Users, Settings, ChevronsUpDown, Plus, Check,
   Search, Bell, X, Mail, ShieldCheck, UserPlus, TrendingUp, TrendingDown, Wallet, Target,
@@ -17,10 +19,12 @@ import {
 
 const STAGES = [
   { id: "new", label: "לידים חדשים", dot: "bg-sky-400" },
-  { id: "progress", label: "בטיפול", dot: "bg-amber-400" },
+  { id: "in_progress", label: "בטיפול", dot: "bg-amber-400" },
   { id: "proposal", label: "הצעת מחיר", dot: "bg-violet-400" },
   { id: "won", label: "עסקה נסגרה", dot: "bg-emerald-400" },
+  { id: "lost", label: "הפסד", dot: "bg-rose-400" },
 ];
+const isOpen = (l) => l.stage !== "won" && l.stage !== "lost";
 
 const TAG_STYLES = {
   "חם": "bg-rose-500/10 text-rose-300 border-rose-500/20",
@@ -37,63 +41,27 @@ const AVATAR_COLORS = ["from-sky-500 to-indigo-500", "from-emerald-500 to-teal-5
 
 const ils = (n) => new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(n);
 const initials = (name) => name.split(" ").map((p) => p[0]).slice(0, 2).join("");
-let uid = 1000;
-const nextId = (p) => `${p}_${++uid}`;
+const today = () => new Date().toISOString().slice(0, 10);
+const HE_MONTHS = ["ינו׳", "פבר׳", "מרץ", "אפר׳", "מאי", "יוני", "יולי", "אוג׳", "ספט׳", "אוק׳", "נוב׳", "דצמ׳"];
+const ROLE_TO_DB = { Admin: "admin", Agent: "agent", Viewer: "viewer" };
+const slugify = (name) => {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+  return `${base.length >= 2 ? base : "org"}-${Math.random().toString(36).slice(2, 7)}`;
+};
 
-const SEED = [
-  {
-    id: "org_nitzanet",
-    name: "Nitzanet Agency",
-    plan: "Pro",
-    domain: "nitzanet.co.il",
-    color: "from-indigo-500 to-sky-500",
-    members: [
-      { id: "m1", name: "ניצן מאיה", email: "nitzan@nitzanet.co.il", role: "Owner", status: "active", color: 0 },
-      { id: "m2", name: "דנה לוי", email: "dana@nitzanet.co.il", role: "Admin", status: "active", color: 1 },
-      { id: "m3", name: "יואב כהן", email: "yoav@nitzanet.co.il", role: "Agent", status: "active", color: 2 },
-      { id: "m4", name: "מאיה פרץ", email: "maya@nitzanet.co.il", role: "Agent", status: "active", color: 3 },
-      { id: "m5", name: "אורי שמש", email: "ori@nitzanet.co.il", role: "Agent", status: "pending", color: 4 },
-    ],
-    leads: [
-      { id: "l1", name: "קפה ארומה הרצליה", contact: "רונית אברהם", phone: "052-4418820", email: "ronit@aroma-hz.co.il", value: 18500, stage: "new", owner: "m3", tags: ["אתר", "חם"], source: "גוגל אורגני", created: "2026-09-29", note: "מבקשים אתר תדמית עם הזמנות אונליין." },
-      { id: "l2", name: "סטודיו יוגה שאנטי", contact: "עדי ברק", phone: "054-7712390", email: "adi@shanti.yoga", value: 7200, stage: "new", owner: "m4", tags: ["קמפיין"], source: "אינסטגרם", created: "2026-10-01", note: "קמפיין השקה לסניף חדש בתל אביב." },
-      { id: "l3", name: "משרד עו״ד גולן ושות׳", contact: "אבי גולן", phone: "050-3329011", email: "avi@golan-law.co.il", value: 32000, stage: "progress", owner: "m2", tags: ["SEO", "VIP"], source: "הפניה", created: "2026-09-18", note: "קידום אורגני ל-12 חודשים, פגישת אפיון נקבעה." },
-      { id: "l4", name: "רהיטי עץ הזית", contact: "שירן מזרחי", phone: "053-6654120", email: "shiran@olivewood.co.il", value: 14800, stage: "progress", owner: "m3", tags: ["אתר"], source: "פייסבוק", created: "2026-09-22", note: "חנות WooCommerce עם 300 מוצרים." },
-      { id: "l5", name: "קליניקת שיניים סמייל", contact: "ד״ר תמר וייס", phone: "052-8807712", email: "tamar@smile-clinic.co.il", value: 24000, stage: "proposal", owner: "m1", tags: ["ריטיינר", "חם"], source: "גוגל ממומן", created: "2026-09-10", note: "נשלחה הצעה לריטיינר חודשי, ממתינים לאישור." },
-      { id: "l6", name: "פיטנס פלוס", contact: "גיל רוזן", phone: "058-1123345", email: "gil@fitplus.co.il", value: 9600, stage: "proposal", owner: "m4", tags: ["קמפיין"], source: "לינקדאין", created: "2026-09-14", note: "" },
-      { id: "l7", name: "נדל״ן השרון", contact: "מיכל דהן", phone: "050-9981234", email: "michal@sharon-re.co.il", value: 41000, stage: "won", owner: "m2", tags: ["VIP", "ריטיינר"], source: "הפניה", created: "2026-08-28", note: "נחתם הסכם שנתי. אונבורדינג ב-6/10." },
-      { id: "l8", name: "מאפיית לחם הבית", contact: "יוסי חדד", phone: "054-2238871", email: "yossi@lechem.co.il", value: 6400, stage: "won", owner: "m3", tags: ["אתר", "הפניה"], source: "הפניה", created: "2026-09-02", note: "" },
-    ],
-  },
-  {
-    id: "org_bloom",
-    name: "Bloom Studio",
-    plan: "Starter",
-    domain: "bloom-studio.co.il",
-    color: "from-fuchsia-500 to-rose-500",
-    members: [
-      { id: "b1", name: "ניצן מאיה", email: "nitzan@bloom-studio.co.il", role: "Owner", status: "active", color: 0 },
-      { id: "b2", name: "נועה אלון", email: "noa@bloom-studio.co.il", role: "Agent", status: "active", color: 3 },
-    ],
-    leads: [
-      { id: "k1", name: "חתונות בגליל", contact: "ליאור סעדה", phone: "052-1100998", email: "lior@galil-events.co.il", value: 12000, stage: "new", owner: "b2", tags: ["קמפיין"], source: "אינסטגרם", created: "2026-09-30", note: "" },
-      { id: "k2", name: "בוטיק אופנה רוז", contact: "הדר נחום", phone: "053-4456781", email: "hadar@rose.co.il", value: 8800, stage: "proposal", owner: "b1", tags: ["אתר", "חם"], source: "טיקטוק", created: "2026-09-20", note: "" },
-      { id: "k3", name: "קרמיקה ים", contact: "רז טל", phone: "050-7765430", email: "raz@yam-ceramics.co.il", value: 5200, stage: "won", owner: "b2", tags: ["הפניה"], source: "הפניה", created: "2026-09-05", note: "" },
-    ],
-  },
-];
-
-const ACTIVITY = [
-  { icon: Check, text: "נדל״ן השרון עברה ל״עסקה נסגרה״", who: "דנה לוי", when: "לפני 12 דק׳", tone: "text-emerald-400" },
-  { icon: Send, text: "נשלחה הצעת מחיר לקליניקת שיניים סמייל", who: "ניצן מאיה", when: "לפני שעה", tone: "text-violet-400" },
-  { icon: UserPlus, text: "אורי שמש הוזמן לארגון כ-Agent", who: "ניצן מאיה", when: "לפני 3 שעות", tone: "text-sky-400" },
-  { icon: Phone, text: "שיחת היכרות עם משרד עו״ד גולן", who: "דנה לוי", when: "אתמול", tone: "text-amber-400" },
-];
-
-const MONTHLY = [
-  { m: "מאי", v: 62000 }, { m: "יוני", v: 71000 }, { m: "יולי", v: 58000 },
-  { m: "אוג׳", v: 84000 }, { m: "ספט׳", v: 96000 }, { m: "אוק׳", v: 47400 },
-];
+// Lead (UI shape) -> leads row
+const toRow = (l) => ({
+  title: l.name.trim(),
+  contact_name: l.contact || null,
+  phone: l.phone || null,
+  email: l.email || null,
+  value: Number(l.value) || 0,
+  stage: l.stage,
+  assignee_id: l.owner || null,
+  tags: l.tags,
+  source: l.source || null,
+  notes: l.note || null,
+});
 
 /* ------------------------------ primitives ------------------------------ */
 
@@ -133,6 +101,7 @@ const RoleBadge = ({ role }) => {
     Owner: "bg-amber-500/10 text-amber-300 border-amber-500/20",
     Admin: "bg-indigo-500/10 text-indigo-300 border-indigo-500/20",
     Agent: "bg-zinc-500/10 text-zinc-300 border-white/10",
+    Viewer: "bg-sky-500/10 text-sky-300 border-sky-500/20",
   }[role];
   return <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${s}`}>{role === "Owner" && <Crown size={11} />}{role}</span>;
 };
@@ -206,23 +175,27 @@ function OrgSwitcher({ orgs, current, onSwitch, onCreate }) {
 /* ----------------------------------- KPIs ----------------------------------- */
 
 function KpiCard({ icon: Icon, label, value, delta, hint, spark }) {
-  const up = delta >= 0;
-  const max = Math.max(...spark);
-  const pts = spark.map((v, i) => `${(i / (spark.length - 1)) * 100},${28 - (v / max) * 24}`).join(" ");
+  const up = delta == null || delta >= 0;
+  const max = spark ? Math.max(1, ...spark) : 1;
+  const pts = spark ? spark.map((v, i) => `${(i / (spark.length - 1)) * 100},${28 - (v / max) * 24}`).join(" ") : "";
   return (
     <Glass className="p-4">
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-2 text-xs font-medium text-zinc-400"><Icon size={15} className="text-zinc-500" />{label}</span>
-        <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${up ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>
-          {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{Math.abs(delta)}%
-        </span>
+        {delta != null && (
+          <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${up ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>
+            {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{Math.abs(delta)}%
+          </span>
+        )}
       </div>
       <div className="mt-3 text-2xl font-bold tracking-tight text-zinc-50 tabular-nums">{value}</div>
       <div className="mt-2 flex items-end justify-between gap-3">
         <span className="text-[11px] text-zinc-500">{hint}</span>
-        <svg viewBox="0 0 100 30" className="h-7 w-24" preserveAspectRatio="none" style={{ transform: "scaleX(-1)" }}>
-          <polyline points={pts} fill="none" stroke={up ? "#34d399" : "#fb7185"} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-        </svg>
+        {spark && (
+          <svg viewBox="0 0 100 30" className="h-7 w-24" preserveAspectRatio="none" style={{ transform: "scaleX(-1)" }}>
+            <polyline points={pts} fill="none" stroke={up ? "#34d399" : "#fb7185"} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+          </svg>
+        )}
       </div>
     </Glass>
   );
@@ -230,26 +203,26 @@ function KpiCard({ icon: Icon, label, value, delta, hint, spark }) {
 
 function Kpis({ leads }) {
   const won = leads.filter((l) => l.stage === "won");
-  const open = leads.filter((l) => l.stage !== "won");
+  const open = leads.filter(isOpen);
   const wonValue = won.reduce((s, l) => s + l.value, 0);
   const pipeline = open.reduce((s, l) => s + l.value, 0);
   const conv = leads.length ? Math.round((won.length / leads.length) * 100) : 0;
   const avg = won.length ? Math.round(wonValue / won.length) : 0;
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <KpiCard icon={Wallet} label="הכנסות שנסגרו" value={ils(wonValue)} delta={18.2} hint="לעומת החודש הקודם" spark={[4, 6, 5, 8, 7, 10, 12]} />
-      <KpiCard icon={Activity} label="שווי צנרת פתוחה" value={ils(pipeline)} delta={9.4} hint={`${open.length} לידים פעילים`} spark={[6, 5, 7, 6, 8, 9, 9]} />
-      <KpiCard icon={Percent} label="יחס המרה" value={`${conv}%`} delta={-2.1} hint="ליד לעסקה סגורה" spark={[9, 8, 8, 7, 8, 6, 7]} />
-      <KpiCard icon={Target} label="עסקה ממוצעת" value={ils(avg)} delta={5.7} hint="בעסקאות שנסגרו" spark={[3, 4, 4, 5, 6, 6, 7]} />
+      <KpiCard icon={Wallet} label="הכנסות שנסגרו" value={ils(wonValue)} hint={`${won.length} עסקאות`} />
+      <KpiCard icon={Activity} label="שווי צנרת פתוחה" value={ils(pipeline)} hint={`${open.length} לידים פעילים`} />
+      <KpiCard icon={Percent} label="יחס המרה" value={`${conv}%`} hint="ליד לעסקה סגורה" />
+      <KpiCard icon={Target} label="עסקה ממוצעת" value={ils(avg)} hint="בעסקאות שנסגרו" />
     </div>
   );
 }
 
 /* ---------------------------------- kanban ---------------------------------- */
 
-function LeadCard({ lead, owner, onOpen, onDragStart, dragging }) {
+function LeadCard({ lead, owner, onOpen, onDragStart, dragging, draggable = true }) {
   return (
-    <div draggable onDragStart={(e) => onDragStart(e, lead.id)} onClick={() => onOpen(lead)}
+    <div draggable={draggable} onDragStart={(e) => onDragStart(e, lead.id)} onClick={() => onOpen(lead)}
       onKeyDown={(e) => e.key === "Enter" && onOpen(lead)} tabIndex={0} role="button" aria-label={`ליד: ${lead.name}`}
       className={`group cursor-grab rounded-lg border border-white/10 bg-zinc-900/80 p-3 shadow-sm transition hover:border-white/20 hover:bg-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 active:cursor-grabbing ${dragging ? "opacity-40" : ""}`}>
       <div className="flex items-start justify-between gap-2">
@@ -273,7 +246,7 @@ function LeadCard({ lead, owner, onOpen, onDragStart, dragging }) {
   );
 }
 
-function Kanban({ org, onMove, onOpen, onAdd, query }) {
+function Kanban({ org, onMove, onOpen, onAdd, query, canEdit }) {
   const [dragId, setDragId] = useState(null);
   const [over, setOver] = useState(null);
   const memberById = (id) => org.members.find((m) => m.id === id);
@@ -281,7 +254,7 @@ function Kanban({ org, onMove, onOpen, onAdd, query }) {
   const start = (e, id) => { setDragId(id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); };
   return (
     <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-      <div className="grid min-w-[1040px] grid-cols-4 gap-3">
+      <div className="grid min-w-[1280px] grid-cols-5 gap-3">
         {STAGES.map((s) => {
           const items = leads.filter((l) => l.stage === s.id);
           const total = items.reduce((a, l) => a + l.value, 0);
@@ -300,9 +273,9 @@ function Kanban({ org, onMove, onOpen, onAdd, query }) {
                 <span className="text-[11px] font-medium text-zinc-500 tabular-nums">{ils(total)}</span>
               </header>
               <div className="flex flex-1 flex-col gap-2 px-2 pb-2" onDragEnd={() => { setDragId(null); setOver(null); }}>
-                {items.map((l) => <LeadCard key={l.id} lead={l} owner={memberById(l.owner)} onOpen={onOpen} onDragStart={start} dragging={dragId === l.id} />)}
+                {items.map((l) => <LeadCard key={l.id} lead={l} owner={memberById(l.owner)} onOpen={onOpen} onDragStart={start} dragging={dragId === l.id} draggable={canEdit} />)}
                 {items.length === 0 && <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-white/10 py-8 text-xs text-zinc-600">גררו ליד לכאן</div>}
-                {s.id === "new" && (
+                {s.id === "new" && canEdit && (
                   <button onClick={onAdd} className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/10 py-2 text-xs text-zinc-500 transition hover:border-white/20 hover:text-zinc-300">
                     <Plus size={14} /> ליד חדש
                   </button>
@@ -318,7 +291,7 @@ function Kanban({ org, onMove, onOpen, onAdd, query }) {
 
 /* --------------------------------- lead modal -------------------------------- */
 
-function LeadModal({ lead, org, onClose, onSave, onDelete }) {
+function LeadModal({ lead, org, onClose, onSave, onDelete, canEdit, canDelete }) {
   const [draft, setDraft] = useState(lead);
   if (!lead || !draft) return null;
   const isNew = !org.leads.some((l) => l.id === lead.id);
@@ -356,7 +329,8 @@ function LeadModal({ lead, org, onClose, onSave, onDelete }) {
           </select>
         </Field>
         <Field label="שיוך לאיש צוות">
-          <select id="lead-owner" className={inputCls} value={draft.owner} onChange={set("owner")}>
+          <select id="lead-owner" className={inputCls} value={draft.owner ?? ""} onChange={set("owner")}>
+            <option value="">ללא שיוך</option>
             {org.members.filter((m) => m.status === "active").map((m) => <option key={m.id} value={m.id}>{m.name} · {m.role}</option>)}
           </select>
         </Field>
@@ -379,10 +353,10 @@ function LeadModal({ lead, org, onClose, onSave, onDelete }) {
         <Field label="הערות"><textarea id="lead-note" rows={3} className={inputCls} value={draft.note} onChange={set("note")} placeholder="סיכום שיחה, צעדים הבאים..." /></Field>
       </div>
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-        {!isNew ? <Btn variant="danger" onClick={() => onDelete(lead.id)}><Trash2 size={15} />מחיקת ליד</Btn> : <span />}
+        {!isNew && canDelete ? <Btn variant="danger" onClick={() => onDelete(lead.id)}><Trash2 size={15} />מחיקת ליד</Btn> : <span />}
         <div className="flex gap-2">
-          <Btn variant="ghost" onClick={onClose}>ביטול</Btn>
-          <Btn disabled={!draft.name.trim()} onClick={() => onSave(draft)}><Check size={15} />{isNew ? "יצירת ליד" : "שמירת שינויים"}</Btn>
+          <Btn variant="ghost" onClick={onClose}>{canEdit ? "ביטול" : "סגירה"}</Btn>
+          {canEdit && <Btn disabled={!draft.name.trim()} onClick={() => onSave(draft)}><Check size={15} />{isNew ? "יצירת ליד" : "שמירת שינויים"}</Btn>}
         </div>
       </div>
     </Modal>
@@ -394,7 +368,8 @@ function LeadModal({ lead, org, onClose, onSave, onDelete }) {
 function Dashboard({ org, onOpen, go }) {
   const byStage = STAGES.map((s) => ({ ...s, items: org.leads.filter((l) => l.stage === s.id) }));
   const total = org.leads.reduce((a, l) => a + l.value, 0) || 1;
-  const hot = [...org.leads].filter((l) => l.stage !== "won").sort((a, b) => b.value - a.value).slice(0, 4);
+  const hot = [...org.leads].filter(isOpen).sort((a, b) => b.value - a.value).slice(0, 4);
+  const recent = [...org.leads].sort((a, b) => (a.created < b.created ? 1 : -1)).slice(0, 5);
   return (
     <div className="flex flex-col gap-4">
       <Kpis leads={org.leads} />
@@ -407,7 +382,7 @@ function Dashboard({ org, onOpen, go }) {
           <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-white/5">
             {byStage.map((s) => <div key={s.id} className={s.dot} style={{ width: `${(s.items.reduce((a, l) => a + l.value, 0) / total) * 100}%` }} />)}
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
             {byStage.map((s) => (
               <div key={s.id}>
                 <div className="flex items-center gap-1.5 text-xs text-zinc-400"><span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />{s.label}</div>
@@ -417,6 +392,7 @@ function Dashboard({ org, onOpen, go }) {
             ))}
           </div>
           <h3 className="mt-6 text-sm font-semibold text-zinc-200">עסקאות פתוחות מובילות</h3>
+          {hot.length === 0 && <p className="mt-3 text-xs text-zinc-500">אין עדיין לידים פתוחים.</p>}
           <ul className="mt-2 divide-y divide-white/5">
             {hot.map((l) => (
               <li key={l.id}>
@@ -433,17 +409,22 @@ function Dashboard({ org, onOpen, go }) {
           </ul>
         </Glass>
         <Glass className="p-5">
-          <h3 className="text-sm font-semibold text-zinc-200">פעילות אחרונה</h3>
+          <h3 className="text-sm font-semibold text-zinc-200">לידים אחרונים</h3>
+          {recent.length === 0 && <p className="mt-4 text-xs text-zinc-500">הלידים שתוסיפו יופיעו כאן.</p>}
           <ol className="mt-4 flex flex-col gap-4">
-            {ACTIVITY.map((a, i) => (
-              <li key={i} className="flex gap-3">
-                <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] ${a.tone}`}><a.icon size={13} /></span>
-                <div className="min-w-0">
-                  <p className="text-sm leading-snug text-zinc-300">{a.text}</p>
-                  <p className="mt-0.5 text-[11px] text-zinc-500">{a.who} · {a.when}</p>
-                </div>
-              </li>
-            ))}
+            {recent.map((l) => {
+              const stage = STAGES.find((s) => s.id === l.stage);
+              const owner = org.members.find((m) => m.id === l.owner);
+              return (
+                <li key={l.id} className="flex gap-3">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-sky-400"><UserPlus size={13} /></span>
+                  <button onClick={() => onOpen(l)} className="min-w-0 text-start">
+                    <p className="text-sm leading-snug text-zinc-300">{l.name} · {stage.label}</p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">{owner ? owner.name : "ללא שיוך"} · {l.created.split("-").reverse().join("/")}</p>
+                  </button>
+                </li>
+              );
+            })}
           </ol>
         </Glass>
       </div>
@@ -454,8 +435,15 @@ function Dashboard({ org, onOpen, go }) {
 /* ---------------------------------- analytics --------------------------------- */
 
 function Analytics({ org }) {
-  const max = Math.max(...MONTHLY.map((d) => d.v));
-  const sources = Object.entries(org.leads.reduce((acc, l) => ({ ...acc, [l.source]: (acc[l.source] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]);
+  const now = new Date();
+  const MONTHLY = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const v = org.leads.filter((l) => l.stage === "won" && l.created.startsWith(key)).reduce((a, l) => a + l.value, 0);
+    return { m: HE_MONTHS[d.getMonth()], v };
+  });
+  const max = Math.max(1, ...MONTHLY.map((d) => d.v));
+  const sources = Object.entries(org.leads.reduce((acc, l) => { const k = l.source || "לא צוין"; return { ...acc, [k]: (acc[k] || 0) + 1 }; }, {})).sort((a, b) => b[1] - a[1]);
   const perAgent = org.members.map((m) => ({ m, won: org.leads.filter((l) => l.owner === m.id && l.stage === "won").reduce((a, l) => a + l.value, 0), count: org.leads.filter((l) => l.owner === m.id).length })).filter((x) => x.count);
   const agentMax = Math.max(1, ...perAgent.map((x) => x.won));
   return (
@@ -464,7 +452,7 @@ function Analytics({ org }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Glass className="p-5 lg:col-span-2">
           <h3 className="text-sm font-semibold text-zinc-200">הכנסות חודשיות (₪)</h3>
-          <p className="text-[11px] text-zinc-500">אוקטובר מעודכן ל-3/10</p>
+          <p className="text-[11px] text-zinc-500">עסקאות שנסגרו, לפי חודש פתיחת הליד</p>
           <div className="mt-6 flex h-48 items-end gap-3">
             {MONTHLY.map((d, i) => (
               <div key={d.m} className="flex flex-1 flex-col items-center gap-2">
@@ -508,14 +496,15 @@ function Analytics({ org }) {
 /* ------------------------------ team & permissions ----------------------------- */
 
 const PERMS = [
-  { label: "צפייה ועריכת לידים משויכים", admin: true, agent: true },
-  { label: "צפייה בכל לידי הארגון", admin: true, agent: false },
-  { label: "הזמנת משתמשים וניהול הרשאות", admin: true, agent: false },
-  { label: "ייצוא נתונים ואנליטיקה", admin: true, agent: false },
-  { label: "חיוב והגדרות ארגון", admin: true, agent: false },
+  { label: "צפייה ועריכת לידים משויכים", admin: true, agent: true, viewer: false },
+  { label: "צפייה בכל לידי הארגון", admin: true, agent: false, viewer: true },
+  { label: "צפייה בדוחות ואנליטיקה", admin: true, agent: false, viewer: true },
+  { label: "מחיקת לידים", admin: true, agent: false, viewer: false },
+  { label: "הזמנת משתמשים וניהול הרשאות", admin: true, agent: false, viewer: false },
+  { label: "חיוב והגדרות ארגון", admin: true, agent: false, viewer: false },
 ];
 
-function Team({ org, onInvite, onRole, onRemove, notify }) {
+function Team({ org, onInvite, onRole, onRemove, notify, canManage, meId }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("Agent");
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -523,13 +512,12 @@ function Team({ org, onInvite, onRole, onRemove, notify }) {
     e.preventDefault();
     if (!valid) return;
     if (org.members.some((m) => m.email === email)) return notify("המשתמש כבר חבר בארגון");
-    onInvite(email, role);
-    setEmail("");
+    onInvite(email, role).then((ok) => ok && setEmail(""));
   };
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
       <div className="flex flex-col gap-4 xl:col-span-2">
-        <Glass className="p-5">
+        {canManage && <Glass className="p-5">
           <div className="flex items-center gap-2"><UserPlus size={16} className="text-indigo-300" /><h3 className="text-sm font-semibold text-zinc-200">הזמנת חבר צוות</h3></div>
           <p className="mt-1 text-xs text-zinc-500">ההזמנה תישלח במייל ותהיה בתוקף 7 ימים. המשתמש יצורף רק לארגון <span dir="ltr">{org.name}</span>.</p>
           <form onSubmit={submit} className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -538,14 +526,14 @@ function Team({ org, onInvite, onRole, onRemove, notify }) {
               <input id="invite-email" dir="ltr" type="email" placeholder="name@company.co.il" value={email} onChange={(e) => setEmail(e.target.value)} className={`${inputCls} pe-9`} aria-label="אימייל להזמנה" />
             </div>
             <div className="flex rounded-lg border border-white/10 bg-zinc-950/60 p-0.5" role="radiogroup" aria-label="תפקיד">
-              {["Agent", "Admin"].map((r) => (
+              {["Agent", "Admin", "Viewer"].map((r) => (
                 <button key={r} type="button" role="radio" aria-checked={role === r} onClick={() => setRole(r)}
                   className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${role === r ? "bg-white/10 text-zinc-50" : "text-zinc-500 hover:text-zinc-300"}`}>{r}</button>
               ))}
             </div>
             <Btn type="submit" disabled={!valid}><Send size={15} />שליחת הזמנה</Btn>
           </form>
-        </Glass>
+        </Glass>}
         <Glass className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5">
             <h3 className="text-sm font-semibold text-zinc-200">חברי הארגון</h3>
@@ -562,13 +550,13 @@ function Team({ org, onInvite, onRole, onRemove, notify }) {
                   </div>
                   <div className="truncate text-xs text-zinc-500" dir="ltr" style={{ textAlign: "right" }}>{m.email}</div>
                 </div>
-                {m.role === "Owner" ? <RoleBadge role="Owner" /> : (
+                {m.role === "Owner" || !canManage || m.id === meId ? <RoleBadge role={m.role} /> : (
                   <select id={`role-${m.id}`} aria-label={`תפקיד של ${m.name}`} value={m.role} onChange={(e) => onRole(m.id, e.target.value)}
                     className="rounded-md border border-white/10 bg-zinc-950/60 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-400/30">
-                    <option>Admin</option><option>Agent</option>
+                    <option>Admin</option><option>Agent</option><option>Viewer</option>
                   </select>
                 )}
-                {m.role !== "Owner" && (
+                {m.role !== "Owner" && canManage && m.id !== meId && (
                   <button onClick={() => onRemove(m.id)} aria-label={`הסרת ${m.name}`} className="rounded-md p-1.5 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-300"><Trash2 size={15} /></button>
                 )}
               </li>
@@ -580,13 +568,13 @@ function Team({ org, onInvite, onRole, onRemove, notify }) {
         <div className="flex items-center gap-2"><ShieldCheck size={16} className="text-emerald-300" /><h3 className="text-sm font-semibold text-zinc-200">מטריצת הרשאות</h3></div>
         <table className="mt-4 w-full text-sm">
           <thead>
-            <tr className="text-[11px] text-zinc-500"><th className="pb-2 text-start font-medium">יכולת</th><th className="pb-2 font-medium">Admin</th><th className="pb-2 font-medium">Agent</th></tr>
+            <tr className="text-[11px] text-zinc-500"><th className="pb-2 text-start font-medium">יכולת</th><th className="pb-2 font-medium">Admin</th><th className="pb-2 font-medium">Agent</th><th className="pb-2 font-medium">Viewer</th></tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {PERMS.map((p) => (
               <tr key={p.label}>
                 <td className="py-2.5 pe-2 text-xs text-zinc-300">{p.label}</td>
-                {[p.admin, p.agent].map((ok, i) => (
+                {[p.admin, p.agent, p.viewer].map((ok, i) => (
                   <td key={i} className="py-2.5 text-center">{ok ? <Check size={15} className="mx-auto text-emerald-400" /> : <X size={15} className="mx-auto text-zinc-700" />}</td>
                 ))}
               </tr>
@@ -600,7 +588,7 @@ function Team({ org, onInvite, onRole, onRemove, notify }) {
 
 /* ---------------------------------- settings ---------------------------------- */
 
-function OrgSettings({ org, onSave }) {
+function OrgSettings({ org, onSave, canManage }) {
   const [d, setD] = useState({ name: org.name, domain: org.domain });
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-4">
@@ -612,12 +600,12 @@ function OrgSettings({ org, onSave }) {
           <Field label="מזהה Tenant"><input id="org-id" dir="ltr" readOnly className={`${inputCls} text-zinc-500`} value={org.id} /></Field>
           <Field label="מטבע ואזור זמן"><input id="org-locale" readOnly className={`${inputCls} text-zinc-500`} value="₪ ILS · Asia/Jerusalem" /></Field>
         </div>
-        <div className="mt-5 flex justify-end"><Btn onClick={() => onSave(d)} disabled={!d.name.trim()}><Check size={15} />שמירה</Btn></div>
+        {canManage && <div className="mt-5 flex justify-end"><Btn onClick={() => onSave(d)} disabled={!d.name.trim()}><Check size={15} />שמירה</Btn></div>}
       </Glass>
       <Glass className="flex flex-wrap items-center justify-between gap-3 p-5">
         <div>
           <h3 className="text-sm font-semibold text-zinc-200">תוכנית {org.plan}</h3>
-          <p className="text-xs text-zinc-500">{org.members.length} מתוך {org.plan === "Pro" ? 15 : 3} מושבים בשימוש · חידוש ב-1/11/2026</p>
+          <p className="text-xs text-zinc-500">{org.members.filter((m) => m.status === "active").length} מתוך {org.plan === "Business" ? 50 : org.plan === "Pro" ? 15 : 3} מושבים בשימוש</p>
         </div>
         <Btn variant="ghost"><Sparkles size={15} />שדרוג תוכנית</Btn>
       </Glass>
@@ -676,13 +664,20 @@ const TITLES = {
   dashboard: ["דשבורד", "תמונת מצב של הארגון"],
   kanban: ["קנבאן לידים", "גררו כרטיסיות בין השלבים לעדכון סטטוס"],
   analytics: ["אנליטיקה", "מגמות הכנסה, מקורות וביצועי צוות"],
-  team: ["ניהול צוות והרשאות", "הזמנת משתמשים והגדרת תפקידי Admin / Agent"],
+  team: ["ניהול צוות והרשאות", "הזמנת משתמשים והגדרת תפקידי Admin / Agent / Viewer"],
   settings: ["הגדרות ארגון", "פרטי ה-Tenant, תוכנית וחיוב"],
 };
 
-export default function PulseCRM() {
-  const [orgs, setOrgs] = useState(SEED);
-  const [orgId, setOrgId] = useState(SEED[0].id);
+const ORG_KEY = "pulse:last-org";
+const readLastOrg = () => { try { return localStorage.getItem(ORG_KEY); } catch { return null; } };
+const writeLastOrg = (id) => { try { localStorage.setItem(ORG_KEY, id); } catch {} };
+
+export default function PulseCRM({ initialOrgs, userId }) {
+  const [db] = useState(createClient);
+  const router = useRouter();
+
+  const [orgs, setOrgs] = useState(initialOrgs);
+  const [orgId, setOrgId] = useState(initialOrgs[0].id);
   const [page, setPage] = useState("dashboard");
   const [lead, setLead] = useState(null);
   const [query, setQuery] = useState("");
@@ -694,41 +689,102 @@ export default function PulseCRM() {
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
-  const org = orgs.find((o) => o.id === orgId);
-  const me = org.members[0];
-  const notify = (msg) => { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 2600); };
-  const patchOrg = (fn) => setOrgs((all) => all.map((o) => (o.id === orgId ? fn(o) : o)));
+  // Restore the last active org after hydration
+  useEffect(() => {
+    const last = readLastOrg();
+    if (last && last !== orgId && initialOrgs.some((o) => o.id === last)) setOrgId(last); // eslint-disable-line react-hooks/set-state-in-effect
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const moveLead = (id, stage) => {
+  const org = orgs.find((o) => o.id === orgId) ?? orgs[0];
+  const me = org.members.find((m) => m.id === userId) ?? { id: userId, name: "אני", email: "", role: org.myRole, status: "active", color: 0 };
+  const isAdmin = org.myRole === "Owner" || org.myRole === "Admin";
+  const canEdit = org.myRole !== "Viewer";
+  const notify = (msg) => { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 2600); };
+  const patchOrg = (fn) => setOrgs((all) => all.map((o) => (o.id === org.id ? fn(o) : o)));
+  const fail = (error, msg = "הפעולה נכשלה") => { console.error(error); notify(error?.code === "42501" || error?.code === "PGRST116" ? "אין לך הרשאה לפעולה הזו" : msg); };
+
+  const switchOrg = (id) => { setOrgId(id); writeLastOrg(id); setNavOpen(false); notify("הוחלף ארגון פעיל"); };
+
+  const moveLead = async (id, stage) => {
     const l = org.leads.find((x) => x.id === id);
-    if (!l || l.stage === stage) return;
+    if (!l || l.stage === stage || !canEdit) return;
     patchOrg((o) => ({ ...o, leads: o.leads.map((x) => (x.id === id ? { ...x, stage } : x)) }));
+    const { error } = await db.from("leads").update({ stage }).eq("id", id).select("id").single();
+    if (error) {
+      patchOrg((o) => ({ ...o, leads: o.leads.map((x) => (x.id === id ? { ...x, stage: l.stage } : x)) }));
+      return fail(error);
+    }
     notify(`${l.name} הועבר ל״${STAGES.find((s) => s.id === stage).label}״`);
   };
-  const saveLead = (d) => {
+  const saveLead = async (d) => {
     const exists = org.leads.some((l) => l.id === d.id);
-    patchOrg((o) => ({ ...o, leads: exists ? o.leads.map((l) => (l.id === d.id ? d : l)) : [d, ...o.leads] }));
+    const { data, error } = exists
+      ? await db.from("leads").update(toRow(d)).eq("id", d.id).select().single()
+      : await db.from("leads").insert({ ...toRow(d), id: d.id, org_id: org.id }).select().single();
+    if (error) return fail(error, "שמירת הליד נכשלה");
+    const saved = { ...d, created: data.created_at.slice(0, 10) };
+    patchOrg((o) => ({ ...o, leads: exists ? o.leads.map((l) => (l.id === d.id ? saved : l)) : [saved, ...o.leads] }));
     setLead(null);
     notify(exists ? "הליד עודכן" : "ליד חדש נוסף ללוח");
   };
-  const deleteLead = (id) => { patchOrg((o) => ({ ...o, leads: o.leads.filter((l) => l.id !== id) })); setLead(null); notify("הליד נמחק"); };
-  const newLead = () => setLead({ id: nextId("l"), name: "", contact: "", phone: "", email: "", value: 0, stage: "new", owner: me.id, tags: [], source: "ידני", created: "2026-10-03", note: "" });
-
-  const invite = (email, role) => {
-    patchOrg((o) => ({ ...o, members: [...o.members, { id: nextId("m"), name: email.split("@")[0], email, role, status: "pending", color: o.members.length }] }));
-    notify(`הזמנה נשלחה ל-${email} כ-${role}`);
+  const deleteLead = async (id) => {
+    const { error } = await db.from("leads").delete().eq("id", id).select("id").single();
+    if (error) return fail(error, "מחיקת הליד נכשלה");
+    patchOrg((o) => ({ ...o, leads: o.leads.filter((l) => l.id !== id) }));
+    setLead(null);
+    notify("הליד נמחק");
   };
-  const changeRole = (id, role) => { patchOrg((o) => ({ ...o, members: o.members.map((m) => (m.id === id ? { ...m, role } : m)) })); notify(`התפקיד עודכן ל-${role}`); };
-  const removeMember = (id) => { patchOrg((o) => ({ ...o, members: o.members.filter((m) => m.id !== id), leads: o.leads.map((l) => (l.owner === id ? { ...l, owner: o.members[0].id } : l)) })); notify("המשתמש הוסר מהארגון"); };
+  const newLead = () => setLead({ id: crypto.randomUUID(), name: "", contact: "", phone: "", email: "", value: 0, stage: "new", owner: userId, tags: [], source: "ידני", created: today(), note: "" });
 
-  const createOrg = () => {
+  const invite = async (email, role) => {
+    const res = await fetch("/api/invitations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orgId: org.id, email, role: ROLE_TO_DB[role] }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { notify(res.status === 403 ? "לא ניתן ליצור הזמנה (ייתכן שכבר קיימת הזמנה פתוחה)" : "שליחת ההזמנה נכשלה"); return false; }
+    patchOrg((o) => ({ ...o, members: [...o.members, { id: `inv_${body.id}`, inviteId: body.id, name: email.split("@")[0], email, role, status: "pending", color: o.members.length }] }));
+    notify(`הזמנה נשלחה ל-${email} כ-${role}`);
+    return true;
+  };
+  const changeRole = async (id, role) => {
+    const m = org.members.find((x) => x.id === id);
+    const { error } = m.inviteId
+      ? await db.from("invitations").update({ role: ROLE_TO_DB[role] }).eq("id", m.inviteId).select("id").single()
+      : await db.from("memberships").update({ role: ROLE_TO_DB[role] }).eq("org_id", org.id).eq("user_id", id).select("user_id").single();
+    if (error) return fail(error);
+    patchOrg((o) => ({ ...o, members: o.members.map((x) => (x.id === id ? { ...x, role } : x)) }));
+    notify(`התפקיד עודכן ל-${role}`);
+  };
+  const removeMember = async (id) => {
+    const m = org.members.find((x) => x.id === id);
+    const { error } = m.inviteId
+      ? await db.from("invitations").delete().eq("id", m.inviteId).select("id").single()
+      : await db.from("memberships").delete().eq("org_id", org.id).eq("user_id", id).select("user_id").single();
+    if (error) return fail(error);
+    if (!m.inviteId) await db.from("leads").update({ assignee_id: null }).eq("org_id", org.id).eq("assignee_id", id);
+    patchOrg((o) => ({ ...o, members: o.members.filter((x) => x.id !== id), leads: o.leads.map((l) => (l.owner === id ? { ...l, owner: null } : l)) }));
+    notify(m.inviteId ? "ההזמנה בוטלה" : "המשתמש הוסר מהארגון");
+  };
+
+  const createOrg = async () => {
     const name = newOrgName.trim();
     if (!name) return;
-    const id = nextId("org");
-    setOrgs((all) => [...all, { id, name, plan: "Starter", domain: "", color: "from-emerald-500 to-teal-500", members: [{ ...me, id: nextId("m") }], leads: [] }]);
-    setOrgId(id); setNewOrgOpen(false); setNewOrgName(""); setPage("dashboard");
+    const { data, error } = await db.rpc("create_organization", { _name: name, _slug: slugify(name) });
+    if (error) return fail(error, "יצירת הארגון נכשלה");
+    const created = { id: data.id, name: data.name, plan: data.plan, domain: "", color: "from-emerald-500 to-teal-500", myRole: "Owner", members: [{ ...me, role: "Owner", color: 0 }], leads: [] };
+    setOrgs((all) => [...all, created]);
+    setOrgId(created.id); writeLastOrg(created.id); setNewOrgOpen(false); setNewOrgName(""); setPage("dashboard");
     notify(`הארגון ${name} נוצר`);
   };
+  const saveOrg = async (d) => {
+    const { error } = await db.from("organizations").update({ name: d.name.trim(), domain: d.domain || null }).eq("id", org.id).select("id").single();
+    if (error) return fail(error, "שמירת ההגדרות נכשלה");
+    patchOrg((o) => ({ ...o, ...d }));
+    notify("הגדרות הארגון נשמרו");
+  };
+  const signOut = async () => { await db.auth.signOut(); router.replace("/login"); router.refresh(); };
 
   const [title, subtitle] = TITLES[page];
   const rootCls = [
@@ -745,13 +801,13 @@ export default function PulseCRM() {
         <span className="text-[15px] font-bold tracking-tight">Pulse CRM</span>
         <span className="ms-auto rounded border border-white/10 px-1.5 text-[10px] text-zinc-500">by Nitzanet</span>
       </div>
-      <OrgSwitcher orgs={orgs} current={org} onSwitch={(id) => { setOrgId(id); setNavOpen(false); notify("הוחלף ארגון פעיל"); }} onCreate={() => setNewOrgOpen(true)} />
+      <OrgSwitcher orgs={orgs} current={org} onSwitch={switchOrg} onCreate={() => setNewOrgOpen(true)} />
       <nav className="flex flex-col gap-0.5" aria-label="ניווט ראשי">
         {NAV.map((n) => (
           <button key={n.id} onClick={() => { setPage(n.id); setNavOpen(false); }} aria-current={page === n.id ? "page" : undefined}
             className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition ${page === n.id ? "bg-white/[0.08] font-medium text-zinc-50" : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200"}`}>
             <n.icon size={17} />{n.label}
-            {n.id === "kanban" && <span className="ms-auto rounded bg-white/5 px-1.5 text-[11px] tabular-nums text-zinc-500">{org.leads.filter((l) => l.stage !== "won").length}</span>}
+            {n.id === "kanban" && <span className="ms-auto rounded bg-white/5 px-1.5 text-[11px] tabular-nums text-zinc-500">{org.leads.filter(isOpen).length}</span>}
           </button>
         ))}
       </nav>
@@ -761,7 +817,7 @@ export default function PulseCRM() {
           <div className="truncate text-sm font-medium">{me.name}</div>
           <div className="text-[11px] text-zinc-500">{me.role}</div>
         </div>
-        <button aria-label="התנתקות" className="rounded-md p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><LogOut size={15} /></button>
+        <button onClick={signOut} aria-label="התנתקות" className="rounded-md p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><LogOut size={15} /></button>
       </div>
     </aside>
   );
@@ -795,19 +851,19 @@ export default function PulseCRM() {
             <button className="relative rounded-lg border border-white/10 p-2 text-zinc-400 hover:bg-white/5" aria-label="התראות">
               <Bell size={16} /><span className="absolute end-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-indigo-400" />
             </button>
-            <Btn onClick={newLead} className="hidden sm:inline-flex"><Plus size={15} />ליד חדש</Btn>
+            {canEdit && <Btn onClick={newLead} className="hidden sm:inline-flex"><Plus size={15} />ליד חדש</Btn>}
           </header>
 
           <main className="flex-1 px-4 py-5 sm:px-6">
             <div className="mb-4 flex items-center gap-2 text-xs text-zinc-500">
               <Building2 size={13} /><span dir="ltr">{org.name}</span><span>/</span><span className="text-zinc-300">{title}</span>
-              <span className="ms-auto flex items-center gap-1"><Clock size={12} />עודכן לפני דקה</span>
+              <span className="ms-auto flex items-center gap-1"><Clock size={12} /><RoleBadge role={org.myRole} /></span>
             </div>
             {page === "dashboard" && <Dashboard org={org} onOpen={setLead} go={setPage} />}
-            {page === "kanban" && <Kanban org={org} onMove={moveLead} onOpen={setLead} onAdd={newLead} query={query} />}
+            {page === "kanban" && <Kanban org={org} onMove={moveLead} onOpen={setLead} onAdd={newLead} query={query} canEdit={canEdit} />}
             {page === "analytics" && <Analytics org={org} />}
-            {page === "team" && <Team org={org} onInvite={invite} onRole={changeRole} onRemove={removeMember} notify={notify} />}
-            {page === "settings" && <OrgSettings key={org.id} org={org} onSave={(d) => { patchOrg((o) => ({ ...o, ...d })); notify("הגדרות הארגון נשמרו"); }} />}
+            {page === "team" && <Team org={org} onInvite={invite} onRole={changeRole} onRemove={removeMember} notify={notify} canManage={isAdmin} meId={userId} />}
+            {page === "settings" && <OrgSettings key={org.id} org={org} onSave={saveOrg} canManage={isAdmin} />}
           </main>
 
           <footer className={`border-t border-white/10 px-4 py-5 text-xs text-zinc-500 sm:px-6 ${banner ? "pb-48 sm:pb-32" : ""}`}>
@@ -825,7 +881,7 @@ export default function PulseCRM() {
         </div>
       </div>
 
-      <LeadModal key={lead?.id ?? "none"} lead={lead} org={org} onClose={() => setLead(null)} onSave={saveLead} onDelete={deleteLead} />
+      <LeadModal key={lead?.id ?? "none"} lead={lead} org={org} onClose={() => setLead(null)} onSave={saveLead} onDelete={deleteLead} canEdit={canEdit} canDelete={isAdmin} />
 
       <Modal open={newOrgOpen} onClose={() => setNewOrgOpen(false)} title="הוספת עסק חדש">
         <p className="mb-4 text-sm text-zinc-400">כל עסק מקבל סביבה מבודדת עם לידים, צוות והגדרות משלו. תוכלו לעבור ביניהם מה-Sidebar.</p>

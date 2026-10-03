@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const { data: invite, error } = await supabase
     .from("invitations")
     .insert({ org_id: orgId, email, role, invited_by: userId })
-    .select("token, organizations(name)")
+    .select("id, token, organizations(name)")
     .single()
 
   if (error || !invite) {
@@ -41,5 +41,5 @@ export async function POST(request: Request) {
   })
 
   if (sendError) return NextResponse.json({ error: sendError.message }, { status: 502 })
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, id: invite.id })
 }
