@@ -27,6 +27,9 @@ export type UiLead = {
   source: string
   created: string
   note: string
+  birthday: string
+  serviceMonths: number | null
+  lastService: string
 }
 
 export type UiOrg = {
@@ -35,6 +38,8 @@ export type UiOrg = {
   plan: string
   domain: string
   color: string
+  autoBirthday: boolean
+  autoService: boolean
   myRole: UiRole
   members: UiMember[]
   leads: UiLead[]
@@ -65,6 +70,9 @@ export function toUiLead(l: Tables<"leads">): UiLead {
     source: l.source ?? "",
     created: l.created_at.slice(0, 10),
     note: l.notes ?? "",
+    birthday: l.birthday ?? "",
+    serviceMonths: l.service_interval_months,
+    lastService: l.last_service_at ?? "",
   }
 }
 
@@ -124,6 +132,8 @@ export async function loadOrgs(supabase: SupabaseClient<Database>, userId: strin
       plan: org.plan,
       domain: org.domain ?? "",
       color: org.color ?? ORG_COLORS[i % ORG_COLORS.length],
+      autoBirthday: org.auto_birthday_email,
+      autoService: org.auto_service_reminder,
       myRole: mine ? uiRole(mine.role, org.created_by === userId) : "Viewer",
       members: [...members, ...pending],
       leads: leads.filter((l) => l.org_id === org.id).map(toUiLead),

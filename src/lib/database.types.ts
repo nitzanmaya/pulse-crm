@@ -15,6 +15,8 @@ type Organization = {
   plan: "Starter" | "Pro" | "Business"
   domain: string | null
   color: string | null
+  auto_birthday_email: boolean
+  auto_service_reminder: boolean
 }
 
 type Lead = {
@@ -36,6 +38,28 @@ type Lead = {
   title: string
   updated_at: string
   value: number
+  birthday: string | null
+  service_interval_months: number | null
+  last_service_at: string | null
+}
+
+type ReminderLog = {
+  created_at: string
+  id: string
+  kind: "birthday" | "service"
+  lead_id: string
+  org_id: string
+  sent_for: string
+}
+
+export type DueReminder = {
+  kind: "birthday" | "service"
+  lead_id: string
+  email: string
+  contact_name: string | null
+  lead_title: string
+  org_name: string
+  due: string
 }
 
 type Invitation = {
@@ -94,11 +118,13 @@ export type Database = {
       profiles: Table<Profile, "id">
       messages: Table<Message, "org_id" | "lead_id" | "channel" | "direction" | "content">
       automations: Table<Automation, "org_id" | "name" | "trigger_event" | "action_type">
+      reminder_log: Table<ReminderLog, "org_id" | "lead_id" | "kind" | "sent_for">
     }
     Views: { [_ in never]: never }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
       create_organization: { Args: { _name: string; _slug: string }; Returns: Organization }
+      claim_due_reminders: { Args: { _secret: string }; Returns: DueReminder[] }
     }
     Enums: { lead_stage: LeadStage; member_role: MemberRole }
     CompositeTypes: { [_ in never]: never }

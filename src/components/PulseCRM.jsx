@@ -8,6 +8,7 @@ import {
   Search, Bell, X, Mail, ShieldCheck, UserPlus, TrendingUp, TrendingDown, Wallet, Target,
   Clock, Tag, Phone, Building2, Cookie, Accessibility, Trash2, Calendar, Sparkles, LogOut,
   Menu, Activity, Type, Contrast, GripVertical, Send, Crown, Globe, Percent, Heart, ArrowLeft,
+  Cake, BellRing, Wrench, CalendarCheck,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -48,6 +49,46 @@ const slugify = (name) => {
   return `${base.length >= 2 ? base : "org"}-${Math.random().toString(36).slice(2, 7)}`;
 };
 
+// Date helpers for birthdays and recurring service (dates are "YYYY-MM-DD")
+const parseDay = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const startOfToday = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+const fmtDay = (d) => d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" });
+const daysBetween = (a, b) => Math.round((b - a) / 86400000);
+const nextService = (l) => {
+  if (!l.serviceMonths || !l.lastService) return null;
+  const d = parseDay(l.lastService);
+  d.setMonth(d.getMonth() + Number(l.serviceMonths));
+  return d;
+};
+const daysToBirthday = (l) => {
+  if (!l.birthday) return null;
+  const t = startOfToday();
+  const b = parseDay(l.birthday);
+  let next = new Date(t.getFullYear(), b.getMonth(), b.getDate());
+  if (next < t) next = new Date(t.getFullYear() + 1, b.getMonth(), b.getDate());
+  return daysBetween(t, next);
+};
+const SERVICE_OPTIONS = [
+  { v: "", label: "ללא שירות חוזר" },
+  { v: 3, label: "כל 3 חודשים" },
+  { v: 6, label: "כל חצי שנה" },
+  { v: 12, label: "כל שנה" },
+  { v: 24, label: "כל שנתיים" },
+];
+
+// Upcoming birthdays and services for the next `days` days (overdue services included)
+const upcomingReminders = (leads, days = 30) => {
+  const t = startOfToday();
+  const items = [];
+  for (const l of leads) {
+    const bd = daysToBirthday(l);
+    if (bd != null && bd <= days) items.push({ kind: "birthday", lead: l, days: bd });
+    const ns = nextService(l);
+    if (ns && l.stage !== "lost") { const d = daysBetween(t, ns); if (d <= days) items.push({ kind: "service", lead: l, days: d, date: ns }); }
+  }
+  return items.sort((a, b) => a.days - b.days);
+};
+
 // Lead (UI shape) -> leads row
 const toRow = (l) => ({
   title: l.name.trim(),
@@ -60,6 +101,9 @@ const toRow = (l) => ({
   tags: l.tags,
   source: l.source || null,
   notes: l.note || null,
+  birthday: l.birthday || null,
+  service_interval_months: l.serviceMonths ? Number(l.serviceMonths) : null,
+  last_service_at: l.lastService || null,
 });
 
 /* ------------------------------ primitives ------------------------------ */
@@ -266,6 +310,29 @@ function Kpis({ leads }) {
 
 /* ---------------------------------- kanban ---------------------------------- */
 
+function ReminderBadges({ lead }) {
+  const bd = daysToBirthday(lead);
+  const ns = nextService(lead);
+  const sd = ns ? daysBetween(startOfToday(), ns) : null;
+  const showBd = bd != null && bd <= 7;
+  const showSd = sd != null && sd <= 14 && lead.stage !== "lost";
+  if (!showBd && !showSd) return null;
+  return (
+    <div className="mt-2.5 flex flex-wrap gap-1.5">
+      {showBd && (
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${bd === 0 ? "bg-gradient-to-l from-rose-500 to-pink-500 text-white" : "bg-pink-50 text-pink-700"}`}>
+          <Cake size={13} className={bd === 0 ? "animate-wiggle" : ""} />{bd === 0 ? "יום הולדת היום!" : `יום הולדת בעוד ${bd} ימים`}
+        </span>
+      )}
+      {showSd && (
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${sd < 0 ? "bg-red-50 text-red-700" : "bg-sky-50 text-sky-700"}`}>
+          <BellRing size={13} />{sd < 0 ? `שירות באיחור (${-sd} ימים)` : sd === 0 ? "שירות היום" : `שירות בעוד ${sd} ימים`}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function LeadCard({ lead, owner, onOpen, onDragStart, dragging, draggable = true }) {
   const stage = STAGES.find((s) => s.id === lead.stage);
   return (
@@ -282,6 +349,7 @@ function LeadCard({ lead, owner, onOpen, onDragStart, dragging, draggable = true
           {lead.tags.map((t) => <span key={t} className={`rounded-full border px-2 py-0.5 text-xs font-medium ${tagClass(t)}`}>{t}</span>)}
         </div>
       )}
+      <ReminderBadges lead={lead} />
       <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
         <span className="text-base font-bold tabular-nums text-slate-900">{ils(lead.value)}</span>
         <div className="flex items-center gap-2">
@@ -322,13 +390,13 @@ function Kanban({ org, onMove, onOpen, onAdd, query, canEdit }) {
               onDragLeave={() => setOver((o) => (o === s.id ? null : o))}
               onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain") || dragId; if (id) onMove(id, s.id); setDragId(null); setOver(null); }}
               className={`flex min-h-[460px] flex-col rounded-2xl border-2 transition duration-200 ${over === s.id ? `scale-[1.01] border-dashed border-rose-300 ${s.soft}` : "border-transparent bg-slate-100/70"}`}>
-              <header className="flex items-center justify-between px-3.5 py-3.5">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${s.dot} ${over === s.id ? "animate-heartbeat" : ""}`} />
+              <header className="px-3.5 py-3.5">
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${s.dot} ${over === s.id ? "animate-heartbeat" : ""}`} />
                   <h3 className="text-[15px] font-bold text-slate-800">{s.label}</h3>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${s.soft} ${s.text}`}>{items.length}</span>
+                  <span className={`ms-auto rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${s.soft} ${s.text}`}>{items.length}</span>
                 </div>
-                <span className="text-sm font-semibold text-slate-500 tabular-nums">{ils(total)}</span>
+                <div className="mt-0.5 ps-[18px] text-sm font-semibold text-slate-500 tabular-nums">{ils(total)}</div>
               </header>
               <div className="flex flex-1 flex-col gap-2.5 px-2.5 pb-2.5" onDragEnd={() => { setDragId(null); setOver(null); }}>
                 {items.map((l) => <LeadCard key={l.id} lead={l} owner={memberById(l.owner)} onOpen={onOpen} onDragStart={start} dragging={dragId === l.id} draggable={canEdit} />)}
@@ -354,7 +422,9 @@ function LeadModal({ lead, org, onClose, onSave, onDelete, canEdit, canDelete })
   const [draft, setDraft] = useState(lead);
   if (!lead || !draft) return null;
   const isNew = !org.leads.some((l) => l.id === lead.id);
-  const set = (k) => (e) => setDraft({ ...draft, [k]: k === "value" ? Number(e.target.value) || 0 : e.target.value });
+  const set = (k) => (e) => setDraft({ ...draft, [k]: k === "value" ? Number(e.target.value) || 0 : k === "serviceMonths" ? (Number(e.target.value) || null) : e.target.value });
+  const ns = nextService(draft);
+  const bd = daysToBirthday(draft);
   const toggleTag = (t) => setDraft({ ...draft, tags: draft.tags.includes(t) ? draft.tags.filter((x) => x !== t) : [...draft.tags, t] });
   const owner = org.members.find((m) => m.id === draft.owner);
   return (
@@ -396,6 +466,32 @@ function LeadModal({ lead, org, onClose, onSave, onDelete, canEdit, canDelete })
         <Field label="מקור">
           <input id="lead-source" className={inputCls} value={draft.source} onChange={set("source")} />
         </Field>
+      </div>
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+        <div className="flex items-center gap-2 text-base font-semibold text-slate-800"><CalendarCheck size={18} className="text-violet-500" />תאריכים ושירות חוזר</div>
+        <p className="mt-0.5 text-sm text-slate-500">המערכת תשלח ללקוח ברכה ביום ההולדת ותזכורת שבוע לפני מועד השירות הבא (לפי כתובת המייל שלו).</p>
+        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="תאריך לידה"><input id="lead-birthday" type="date" className={inputCls} value={draft.birthday ?? ""} onChange={set("birthday")} /></Field>
+          <Field label="שירות חוזר">
+            <select id="lead-service" className={inputCls} value={draft.serviceMonths ?? ""} onChange={set("serviceMonths")}>
+              {SERVICE_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </select>
+          </Field>
+          <Field label="שירות אחרון">
+            <div className="flex gap-1.5">
+              <input id="lead-last-service" type="date" className={inputCls} value={draft.lastService ?? ""} onChange={set("lastService")} />
+              <button type="button" title="השירות בוצע היום" onClick={() => setDraft({ ...draft, lastService: today() })}
+                className="shrink-0 rounded-xl border border-slate-200 bg-white px-2.5 text-slate-500 shadow-sm transition hover:border-emerald-300 hover:text-emerald-600 active:scale-95"><Wrench size={17} /></button>
+            </div>
+          </Field>
+        </div>
+        {(ns || bd != null) && (
+          <div className="mt-3 flex flex-wrap gap-2 text-sm">
+            {bd != null && <span className="inline-flex items-center gap-1.5 rounded-full bg-pink-50 px-3 py-1 font-medium text-pink-700"><Cake size={15} />{bd === 0 ? "יום ההולדת היום!" : `יום הולדת בעוד ${bd} ימים`}</span>}
+            {ns && <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 font-medium text-sky-700"><BellRing size={15} />השירות הבא: {fmtDay(ns)}</span>}
+            {!draft.email && <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 font-medium text-amber-700">חסר מייל ללקוח, לא יישלחו הודעות</span>}
+          </div>
+        )}
       </div>
       <div className="mt-5">
         <span className="text-sm font-medium text-slate-600">תגיות</span>
@@ -452,6 +548,35 @@ function Welcome({ name, onAdd, go }) {
   );
 }
 
+function Reminders({ leads, onOpen }) {
+  const items = upcomingReminders(leads).slice(0, 6);
+  return (
+    <Card className="animate-fade-up p-6" style={{ animationDelay: "150ms" }}>
+      <SectionTitle icon={BellRing} color="text-sky-500">תזכורות קרובות</SectionTitle>
+      {items.length === 0 && <p className="mt-3 text-sm text-slate-500">אין ימי הולדת או שירותים ב-30 הימים הקרובים. אפשר להוסיף תאריך לידה ושירות חוזר בכרטיס הלקוח.</p>}
+      <ul className="mt-3 flex flex-col gap-1.5">
+        {items.map((it) => (
+          <li key={`${it.kind}-${it.lead.id}`}>
+            <button onClick={() => onOpen(it.lead)} className="flex w-full items-center gap-3 rounded-xl p-1.5 text-start transition hover:bg-slate-50">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${it.kind === "birthday" ? "bg-pink-50 text-pink-600" : it.days < 0 ? "bg-red-50 text-red-600" : "bg-sky-50 text-sky-600"}`}>
+                {it.kind === "birthday" ? <Cake size={17} className={it.days === 0 ? "animate-wiggle" : ""} /> : <Wrench size={16} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-medium text-slate-800">{it.lead.contact || it.lead.name}</span>
+                <span className="block text-xs text-slate-500">
+                  {it.kind === "birthday"
+                    ? (it.days === 0 ? "יום הולדת היום! ברכה נשלחת אוטומטית" : `יום הולדת בעוד ${it.days} ימים`)
+                    : (it.days < 0 ? `שירות באיחור של ${-it.days} ימים` : it.days === 0 ? "שירות מתוכנן להיום" : `שירות בעוד ${it.days} ימים · ${fmtDay(it.date)}`)}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function Dashboard({ org, onOpen, go, onAdd }) {
   const byStage = STAGES.map((s) => ({ ...s, items: org.leads.filter((l) => l.stage === s.id) }));
   const total = org.leads.reduce((a, l) => a + l.value, 0) || 1;
@@ -497,6 +622,8 @@ function Dashboard({ org, onOpen, go, onAdd }) {
             ))}
           </ul>
         </Card>
+        <div className="flex flex-col gap-5">
+        <Reminders leads={org.leads} onOpen={onOpen} />
         <Card className="animate-fade-up p-6" style={{ animationDelay: "180ms" }}>
           <SectionTitle icon={Sparkles} color="text-violet-500">לידים אחרונים</SectionTitle>
           {recent.length === 0 && <p className="mt-4 text-sm text-slate-500">הלידים שתוסיפו יופיעו כאן.</p>}
@@ -518,6 +645,7 @@ function Dashboard({ org, onOpen, go, onAdd }) {
             })}
           </ol>
         </Card>
+        </div>
       </div>
     </div>
   );
@@ -685,8 +813,24 @@ function Team({ org, onInvite, onRole, onRemove, notify, canManage, meId }) {
 
 /* ---------------------------------- settings ---------------------------------- */
 
+function Toggle({ checked, onChange, disabled, icon: Icon, title, text }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)}
+      className={`flex items-center gap-3 rounded-2xl border p-3.5 text-start transition duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${checked ? "border-rose-200 bg-rose-50/60" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${checked ? "bg-rose-100 text-rose-600" : "bg-slate-100 text-slate-400"}`}><Icon size={19} /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[15px] font-semibold text-slate-800">{title}</span>
+        <span className="block text-sm text-slate-500">{text}</span>
+      </span>
+      <span className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-300 ${checked ? "bg-gradient-to-l from-rose-500 to-pink-500" : "bg-slate-300"}`}>
+        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all duration-300 ${checked ? "start-6" : "start-1"}`} />
+      </span>
+    </button>
+  );
+}
+
 function OrgSettings({ org, onSave, canManage }) {
-  const [d, setD] = useState({ name: org.name, domain: org.domain });
+  const [d, setD] = useState({ name: org.name, domain: org.domain, autoBirthday: org.autoBirthday, autoService: org.autoService });
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-5">
       <Card className="animate-fade-up p-6">
@@ -696,6 +840,17 @@ function OrgSettings({ org, onSave, canManage }) {
           <Field label="דומיין"><input id="org-domain" dir="ltr" className={inputCls} value={d.domain} onChange={(e) => setD({ ...d, domain: e.target.value })} /></Field>
           <Field label="מזהה Tenant"><input id="org-id" dir="ltr" readOnly className={`${inputCls} bg-slate-50 text-slate-500`} value={org.id} /></Field>
           <Field label="מטבע ואזור זמן"><input id="org-locale" readOnly className={`${inputCls} bg-slate-50 text-slate-500`} value="₪ ILS · Asia/Jerusalem" /></Field>
+        </div>
+        {canManage && <div className="mt-6 flex justify-end"><Btn onClick={() => onSave(d)} disabled={!d.name.trim()}><Check size={17} />שמירה</Btn></div>}
+      </Card>
+      <Card className="animate-fade-up p-6" style={{ animationDelay: "60ms" }}>
+        <SectionTitle icon={BellRing} color="text-sky-500">הודעות אוטומטיות ללקוחות</SectionTitle>
+        <p className="mt-1 text-sm text-slate-500">נשלחות כל בוקר מ-crm@nitzanet.co.il בשם הארגון, ללקוחות שיש להם כתובת מייל.</p>
+        <div className="mt-4 flex flex-col gap-3">
+          <Toggle checked={d.autoBirthday} disabled={!canManage} onChange={(v) => setD({ ...d, autoBirthday: v })}
+            icon={Cake} title="ברכת יום הולדת" text="מייל ברכה חגיגי ביום ההולדת של הלקוח" />
+          <Toggle checked={d.autoService} disabled={!canManage} onChange={(v) => setD({ ...d, autoService: v })}
+            icon={Wrench} title="תזכורת לשירות חוזר" text="מייל תזכורת שבוע לפני מועד השירות הבא (שנתי, חצי שנתי וכו׳)" />
         </div>
         {canManage && <div className="mt-6 flex justify-end"><Btn onClick={() => onSave(d)} disabled={!d.name.trim()}><Check size={17} />שמירה</Btn></div>}
       </Card>
@@ -869,7 +1024,7 @@ export default function PulseCRM({ initialOrgs, userId }) {
     setLead(null);
     notify("הליד נמחק");
   };
-  const newLead = () => setLead({ id: crypto.randomUUID(), name: "", contact: "", phone: "", email: "", value: 0, stage: "new", owner: userId, tags: [], source: "ידני", created: today(), note: "" });
+  const newLead = () => setLead({ id: crypto.randomUUID(), name: "", contact: "", phone: "", email: "", value: 0, stage: "new", owner: userId, tags: [], source: "ידני", created: today(), note: "", birthday: "", serviceMonths: null, lastService: "" });
 
   useEffect(() => { shortcutNew.current = canEdit && !lead ? newLead : null; });
 
@@ -910,13 +1065,15 @@ export default function PulseCRM({ initialOrgs, userId }) {
     if (!name) return;
     const { data, error } = await db.rpc("create_organization", { _name: name, _slug: slugify(name) });
     if (error) return fail(error, "יצירת הארגון נכשלה");
-    const created = { id: data.id, name: data.name, plan: data.plan, domain: "", color: "from-emerald-400 to-teal-500", myRole: "Owner", members: [{ ...me, role: "Owner", color: 0 }], leads: [] };
+    const created = { id: data.id, name: data.name, plan: data.plan, domain: "", color: "from-emerald-400 to-teal-500", autoBirthday: true, autoService: true, myRole: "Owner", members: [{ ...me, role: "Owner", color: 0 }], leads: [] };
     setOrgs((all) => [...all, created]);
     setOrgId(created.id); writeLastOrg(created.id); setNewOrgOpen(false); setNewOrgName(""); setPage("dashboard");
     notify(`הארגון ${name} נוצר`);
   };
   const saveOrg = async (d) => {
-    const { error } = await db.from("organizations").update({ name: d.name.trim(), domain: d.domain || null }).eq("id", org.id).select("id").single();
+    const { error } = await db.from("organizations")
+      .update({ name: d.name.trim(), domain: d.domain || null, auto_birthday_email: d.autoBirthday, auto_service_reminder: d.autoService })
+      .eq("id", org.id).select("id").single();
     if (error) return fail(error, "שמירת ההגדרות נכשלה");
     patchOrg((o) => ({ ...o, ...d }));
     notify("הגדרות הארגון נשמרו");
