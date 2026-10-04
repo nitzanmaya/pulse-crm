@@ -15,5 +15,6 @@ export async function signInWithEmail(formData: FormData) {
     options: { emailRedirectTo: `${env.siteUrl()}/auth/callback?next=${encodeURIComponent(next)}` },
   })
 
+  if (error?.code === "over_email_send_rate_limit") redirect("/login?error=rate-limited")
   redirect(error ? "/login?error=send-failed" : "/login?sent=1")
 }
