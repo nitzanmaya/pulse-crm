@@ -1,4 +1,5 @@
 import { signInWithEmail } from "./actions"
+import { SubmitButton } from "./submit-button"
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const params = await searchParams
@@ -21,11 +22,12 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           dir="ltr"
           className="w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-white/30"
         />
-        <button className="w-full rounded-lg bg-white py-2 text-sm font-semibold text-zinc-950 hover:bg-zinc-200">
-          שליחת קישור
-        </button>
+        <SubmitButton />
         {params.sent && <p className="text-sm text-emerald-400">נשלח קישור התחברות למייל.</p>}
-        {params.error && <p className="text-sm text-red-400">משהו השתבש, נסו שוב.</p>}
+        {params.error === "rate-limited" && (
+          <p className="text-sm text-amber-400">כבר נשלח קישור לפני רגע. בדקו את המייל (גם בספאם), או נסו שוב בעוד דקה.</p>
+        )}
+        {params.error && params.error !== "rate-limited" && <p className="text-sm text-red-400">משהו השתבש, נסו שוב.</p>}
       </form>
     </main>
   )
