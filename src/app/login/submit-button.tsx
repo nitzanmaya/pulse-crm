@@ -1,15 +1,15 @@
 "use client"
 
 import { useFormStatus } from "react-dom"
+import { Loader2, Send } from "lucide-react"
+import { authButton } from "@/components/AuthShell"
 
 export function SubmitButton() {
   const { pending } = useFormStatus()
   return (
-    <button
-      disabled={pending}
-      className="w-full rounded-lg bg-white py-2 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:cursor-wait disabled:opacity-60"
-    >
-      {pending ? "שולח…" : "שליחת קישור"}
+    <button disabled={pending} className={authButton}>
+      {pending ? <Loader2 size={19} className="animate-spin" /> : <Send size={19} />}
+      {pending ? "שולח…" : "שליחת קישור כניסה"}
     </button>
   )
 }

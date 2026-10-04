@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
-import { Assistant } from "next/font/google"
+import { Rubik } from "next/font/google"
 import "./globals.css"
 
-const assistant = Assistant({
-  variable: "--font-assistant",
+const rubik = Rubik({
+  variable: "--font-rubik",
   subsets: ["hebrew", "latin"],
 })
 
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="he" dir="rtl" className={`${assistant.variable} dark h-full antialiased`}>
-      <body className="min-h-full bg-zinc-950 text-zinc-100">{children}</body>
+    <html lang="he" dir="rtl" className={`${rubik.variable} h-full antialiased`}>
+      <body className="min-h-full bg-rose-50/40 text-slate-800">{children}</body>
     </html>
   )
 }
