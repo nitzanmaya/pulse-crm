@@ -28,3 +28,11 @@ npm run dev
 | מחיקת לידים | ✓ | |
 | הזמנת משתמשים ושינוי תפקידים | ✓ | |
 | עריכת הגדרות ארגון | ✓ | |
+
+## תורים, אוטומציות ובוט WhatsApp
+
+- `supabase/migrations/20261005000000_booking_automations.sql` – שירותים (משך, מחיר, שאלות המשך), שעות זמינות וימים חסומים, תורים (עם הגנה מכפל הזמנות), תור הודעות (`notification_jobs`), וטבלאות מוכנות לסנכרון Google Calendar.
+- `/book/<slug>` – דף הזמנה ציבורי ב-5 שלבים. ה-RPC `book_appointment` בודק שהשעה פנויה, פותח/מקשר ליד ומתזמן אישור ותזכורת.
+- `/api/book` שולח את האישור מיד; `/api/cron/notifications` (פעם ביום) שולח תזכורות. שניהם צריכים `CRON_SECRET`.
+- WhatsApp: `src/lib/notify/whatsapp.ts` – מצב הדגמה עד שמגדירים `WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID` (Meta Cloud API).
+- הבוט: `src/lib/bot/flow.ts` – מכונת מצבים שמשמשת את הסימולטור בדשבורד, ותשמש webhook אמיתי בהמשך.

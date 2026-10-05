@@ -17,6 +17,12 @@ type Organization = {
   color: string | null
   auto_birthday_email: boolean
   auto_service_reminder: boolean
+  booking_enabled: boolean
+  booking_headline: string | null
+  booking_slot_minutes: number
+  booking_buffer_minutes: number
+  booking_min_notice_hours: number
+  booking_max_days: number
 }
 
 type Lead = {
@@ -62,6 +68,113 @@ export type DueReminder = {
   due: string
 }
 
+type Service = {
+  color: string
+  created_at: string
+  description: string | null
+  duration_minutes: number
+  id: string
+  is_active: boolean
+  name: string
+  org_id: string
+  position: number
+  price: number
+  questions: Json
+  updated_at: string
+}
+
+type AvailabilityRule = { end_time: string; id: string; org_id: string; start_time: string; weekday: number }
+type AvailabilityBlock = { created_at: string; ends_on: string; id: string; org_id: string; reason: string | null; starts_on: string }
+
+type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show"
+
+type Appointment = {
+  address: string | null
+  answers: Json
+  assignee_id: string | null
+  created_at: string
+  created_by: string | null
+  customer_name: string
+  email: string | null
+  ends_at: string
+  google_event_id: string | null
+  id: string
+  lead_id: string | null
+  notes: string | null
+  org_id: string
+  phone: string | null
+  price: number
+  service_id: string | null
+  source: "booking_page" | "whatsapp_bot" | "manual"
+  starts_at: string
+  status: AppointmentStatus
+  sync_status: "none" | "pending" | "synced" | "error"
+  synced_at: string | null
+  updated_at: string
+}
+
+type CalendarConnection = {
+  account_email: string | null
+  calendar_id: string
+  created_at: string
+  id: string
+  last_error: string | null
+  last_synced_at: string | null
+  org_id: string
+  provider: "google"
+  status: "pending" | "active" | "error" | "revoked"
+  sync_direction: "push" | "pull" | "two_way"
+  sync_token: string | null
+  user_id: string | null
+  watch_channel_id: string | null
+  watch_expires_at: string | null
+  watch_resource_id: string | null
+}
+
+type ExternalBusy = { connection_id: string; ends_at: string; external_event_id: string; id: string; org_id: string; starts_at: string }
+
+type NotificationJob = {
+  appointment_id: string
+  attempts: number
+  automation_id: string | null
+  channel: "whatsapp" | "email"
+  created_at: string
+  error: string | null
+  id: string
+  kind: "confirmation" | "reminder"
+  org_id: string
+  provider: string | null
+  provider_message_id: string | null
+  send_at: string
+  sent_at: string | null
+  status: "queued" | "sending" | "sent" | "simulated" | "failed" | "skipped"
+}
+
+export type NotificationJobClaim = {
+  job_id: string
+  channel: "whatsapp" | "email"
+  kind: "confirmation" | "reminder"
+  phone: string | null
+  email: string | null
+  customer_name: string
+  service_name: string
+  starts_at: string
+  address: string | null
+  org_name: string
+  template: string | null
+  subject: string | null
+}
+
+export type BookingResult = {
+  id: string
+  starts_at: string
+  ends_at: string
+  price: number
+  service: string
+  org_name: string
+  channels: ("whatsapp" | "email")[]
+}
+
 type Invitation = {
   accepted_at: string | null
   created_at: string
@@ -97,6 +210,7 @@ type Automation = {
   is_active: boolean
   name: string
   org_id: string
+  key: string | null
   trigger_event: "lead_created" | "stage_changed" | "appointment_booked" | "message_received"
 }
 
@@ -119,12 +233,44 @@ export type Database = {
       messages: Table<Message, "org_id" | "lead_id" | "channel" | "direction" | "content">
       automations: Table<Automation, "org_id" | "name" | "trigger_event" | "action_type">
       reminder_log: Table<ReminderLog, "org_id" | "lead_id" | "kind" | "sent_for">
+      services: Table<Service, "org_id" | "name">
+      availability_rules: Table<AvailabilityRule, "org_id" | "weekday" | "start_time" | "end_time">
+      availability_blocks: Table<AvailabilityBlock, "org_id" | "starts_on" | "ends_on">
+      appointments: Table<Appointment, "org_id" | "customer_name" | "starts_at" | "ends_at">
+      calendar_connections: Table<CalendarConnection, "org_id">
+      external_busy: Table<ExternalBusy, "org_id" | "connection_id" | "external_event_id" | "starts_at" | "ends_at">
+      notification_jobs: Table<NotificationJob, "org_id" | "appointment_id" | "channel" | "kind" | "send_at">
     }
     Views: { [_ in never]: never }
     Functions: {
       accept_invitation: { Args: { _token: string }; Returns: string }
       create_organization: { Args: { _name: string; _slug: string }; Returns: Organization }
       claim_due_reminders: { Args: { _secret: string }; Returns: DueReminder[] }
+      get_booking_page: { Args: { _slug: string }; Returns: Json }
+      get_booking_slots: {
+        Args: { _slug: string; _service: string; _answers?: Json; _from?: string | null; _days?: number }
+        Returns: { slot_start: string; slot_end: string }[]
+      }
+      book_appointment: {
+        Args: {
+          _slug: string
+          _service: string
+          _starts_at: string
+          _answers: Json
+          _name: string
+          _phone: string
+          _email?: string | null
+          _address?: string | null
+          _notes?: string | null
+          _source?: string
+        }
+        Returns: Json
+      }
+      claim_notification_jobs: {
+        Args: { _secret: string; _lookahead_minutes?: number; _appointment?: string | null }
+        Returns: NotificationJobClaim[]
+      }
+      finish_notification_jobs: { Args: { _secret: string; _results: Json }; Returns: number }
     }
     Enums: { lead_stage: LeadStage; member_role: MemberRole }
     CompositeTypes: { [_ in never]: never }
