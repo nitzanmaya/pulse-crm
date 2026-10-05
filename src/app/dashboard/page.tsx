@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
-import { loadOrgs } from "@/lib/crm/load"
+import { loadOrgs, providerStatus } from "@/lib/crm/load"
 import PulseCRM from "@/components/PulseCRM"
 
 export default async function DashboardPage() {
@@ -12,5 +12,5 @@ export default async function DashboardPage() {
   const orgs = await loadOrgs(supabase, userId)
   if (!orgs.length) redirect("/onboarding")
 
-  return <PulseCRM initialOrgs={orgs} userId={userId} />
+  return <PulseCRM initialOrgs={orgs} userId={userId} providers={providerStatus()} siteUrl={process.env.NEXT_PUBLIC_SITE_URL ?? "https://crm.nitzanet.co.il"} />
 }

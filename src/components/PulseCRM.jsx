@@ -3,12 +3,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Card, Avatar, ICON_NUDGE, Btn, Field, inputCls, RoleBadge, SectionTitle, Modal, Toggle } from "@/components/ui";
+import CalendarPage from "@/components/booking/CalendarPage";
+import AutomationsPage from "@/components/booking/AutomationsPage";
+import { localParts, fmtTime, todayKey, WEEKDAYS_SHORT, serviceColor } from "@/lib/booking/shared";
 import {
   LayoutDashboard, SquareKanban, ChartColumn, Users, Settings, ChevronsUpDown, Plus, Check,
   Search, Bell, X, Mail, ShieldCheck, UserPlus, TrendingUp, TrendingDown, Wallet, Target,
   Clock, Tag, Phone, Building2, Cookie, Accessibility, Trash2, Calendar, Sparkles, LogOut,
-  Menu, Activity, Type, Contrast, GripVertical, Send, Crown, Globe, Percent, Heart, ArrowLeft,
-  Cake, BellRing, Wrench, CalendarCheck,
+  Menu, Activity, Type, Contrast, GripVertical, Send, Globe, Percent, Heart, ArrowLeft,
+  Cake, BellRing, Wrench, CalendarCheck, CalendarDays, Zap,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -37,10 +41,8 @@ const TAG_STYLES = {
 };
 const tagClass = (t) => TAG_STYLES[t] || "bg-slate-50 text-slate-600 border-slate-200";
 
-const AVATAR_COLORS = ["from-sky-400 to-indigo-500", "from-emerald-400 to-teal-500", "from-amber-400 to-orange-500", "from-fuchsia-400 to-violet-500", "from-rose-400 to-pink-500"];
 
 const ils = (n) => new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(n);
-const initials = (name) => name.split(" ").map((p) => p[0]).slice(0, 2).join("");
 const today = () => new Date().toISOString().slice(0, 10);
 const HE_MONTHS = ["ינו׳", "פבר׳", "מרץ", "אפר׳", "מאי", "יוני", "יולי", "אוג׳", "ספט׳", "אוק׳", "נוב׳", "דצמ׳"];
 const ROLE_TO_DB = { Admin: "admin", Agent: "agent", Viewer: "viewer" };
@@ -105,93 +107,6 @@ const toRow = (l) => ({
   service_interval_months: l.serviceMonths ? Number(l.serviceMonths) : null,
   last_service_at: l.lastService || null,
 });
-
-/* ------------------------------ primitives ------------------------------ */
-
-const Card = ({ className = "", children, ...rest }) => (
-  <div className={`rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-16px_rgba(15,23,42,0.14)] ${className}`} {...rest}>{children}</div>
-);
-
-const Avatar = ({ member, size = "h-8 w-8 text-xs" }) => (
-  <span title={member?.name} className={`inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${AVATAR_COLORS[(member?.color ?? 0) % AVATAR_COLORS.length]} ${size} font-semibold text-white shadow-sm ring-2 ring-white`}>
-    {member ? initials(member.name) : "?"}
-  </span>
-);
-
-// Icons inside buttons get a small playful nudge on hover.
-const ICON_NUDGE = "[&_svg]:transition-transform [&_svg]:duration-200 [&:hover_svg]:scale-110 [&:hover_svg]:-rotate-6";
-
-const Btn = ({ variant = "primary", size = "md", className = "", children, onPointerDown, ...rest }) => {
-  const [ripples, setRipples] = useState([]);
-  const addRipple = (e) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const id = Date.now() + Math.random();
-    setRipples((all) => [...all, { id, x: e.clientX - r.left, y: e.clientY - r.top, d: Math.max(r.width, r.height) * 2.2 }]);
-    setTimeout(() => setRipples((all) => all.filter((x) => x.id !== id)), 650);
-    onPointerDown?.(e);
-  };
-  const v = {
-    primary: "bg-gradient-to-l from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/25 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-rose-500/35",
-    ghost: "border border-slate-200 bg-white text-slate-700 shadow-sm hover:-translate-y-0.5 hover:border-rose-200 hover:text-rose-600 hover:shadow-md",
-    danger: "border border-red-200 bg-red-50 text-red-600 hover:-translate-y-0.5 hover:bg-red-100",
-  }[variant];
-  const s = { md: "h-11 px-5 text-[15px]", lg: "h-12 px-6 text-base" }[size];
-  return (
-    <button onPointerDown={addRipple} className={`relative isolate inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl font-semibold transition-all duration-200 active:translate-y-0 active:scale-[0.97] focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-200 disabled:pointer-events-none disabled:opacity-45 ${ICON_NUDGE} ${s} ${v} ${className}`} {...rest}>
-      {ripples.map((r) => (
-        <span key={r.id} aria-hidden className={`pointer-events-none absolute -z-10 animate-ripple rounded-full ${variant === "primary" ? "bg-white" : "bg-rose-400"}`} style={{ left: r.x, top: r.y, width: r.d, height: r.d }} />
-      ))}
-      {children}
-    </button>
-  );
-};
-
-const Field = ({ label, children }) => (
-  <label className="flex flex-col gap-1.5">
-    <span className="text-sm font-medium text-slate-600">{label}</span>
-    {children}
-  </label>
-);
-const inputCls = "w-full min-h-11 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-[15px] text-slate-800 placeholder:text-slate-400 shadow-sm transition focus:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-100";
-
-const RoleBadge = ({ role }) => {
-  const s = {
-    Owner: "bg-amber-50 text-amber-700 border-amber-200",
-    Admin: "bg-violet-50 text-violet-700 border-violet-200",
-    Agent: "bg-sky-50 text-sky-700 border-sky-200",
-    Viewer: "bg-slate-100 text-slate-600 border-slate-200",
-  }[role];
-  return <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${s}`}>{role === "Owner" && <Crown size={12} />}{role}</span>;
-};
-
-const SectionTitle = ({ icon: Icon, color = "text-rose-500", children, action }) => (
-  <div className="flex items-center justify-between gap-2">
-    <h3 className="flex items-center gap-2 text-base font-semibold text-slate-800">{Icon && <Icon size={18} className={color} />}{children}</h3>
-    {action}
-  </div>
-);
-
-const Modal = ({ open, onClose, title, children, wide }) => {
-  useEffect(() => {
-    if (!open) return;
-    const h = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [open, onClose]);
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 backdrop-blur-sm sm:items-center" onMouseDown={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}
-        className={`w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] animate-pop-in overflow-y-auto rounded-3xl bg-white shadow-2xl shadow-slate-900/20`}>
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-          <button onClick={onClose} aria-label="סגירה" className="rounded-full p-2 text-slate-400 transition hover:rotate-90 hover:bg-slate-100 hover:text-slate-700"><X size={20} /></button>
-        </div>
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
-  );
-};
 
 /* --------------------------- organization switcher --------------------------- */
 
@@ -577,6 +492,43 @@ function Reminders({ leads, onOpen }) {
   );
 }
 
+function UpcomingAppointments({ org, go }) {
+  const [now] = useState(() => Date.now());
+  const items = org.appointments.filter((a) => (a.status === "confirmed" || a.status === "pending") && new Date(a.ends_at).getTime() > now).slice(0, 4);
+  const svc = (id) => org.services.find((s) => s.id === id);
+  const today = todayKey();
+  return (
+    <Card className="animate-fade-up p-6" style={{ animationDelay: "130ms" }}>
+      <SectionTitle icon={CalendarDays} color="text-rose-500" action={
+        <button onClick={() => go("calendar")} className="group inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-100">
+          ליומן <ArrowLeft size={15} className="transition group-hover:-translate-x-1" />
+        </button>
+      }>תורים קרובים</SectionTitle>
+      {items.length === 0 && <p className="mt-3 text-sm text-slate-500">אין תורים קרובים. שתפו את דף ההזמנה מלשונית ״יומן ותורים״.</p>}
+      <ul className="mt-3 flex flex-col gap-1.5">
+        {items.map((a) => {
+          const p = localParts(a.starts_at);
+          const s = svc(a.service_id);
+          return (
+            <li key={a.id}>
+              <button onClick={() => go("calendar")} className="flex w-full items-center gap-3 rounded-xl p-1.5 text-start transition hover:bg-slate-50">
+                <span className={`flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl bg-gradient-to-br ${serviceColor(s?.color).grad} text-white`}>
+                  <span className="text-[10px] font-semibold leading-none">{p.day === today ? "היום" : WEEKDAYS_SHORT[p.dow]}</span>
+                  <span className="text-[13px] font-bold leading-tight">{fmtTime(a.starts_at)}</span>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-medium text-slate-800">{a.customer_name}</span>
+                  <span className="block truncate text-xs text-slate-500">{s?.name ?? "תור"}{a.address ? ` · ${a.address}` : ""}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
 function Dashboard({ org, onOpen, go, onAdd }) {
   const byStage = STAGES.map((s) => ({ ...s, items: org.leads.filter((l) => l.stage === s.id) }));
   const total = org.leads.reduce((a, l) => a + l.value, 0) || 1;
@@ -623,6 +575,7 @@ function Dashboard({ org, onOpen, go, onAdd }) {
           </ul>
         </Card>
         <div className="flex flex-col gap-5">
+        <UpcomingAppointments org={org} go={go} />
         <Reminders leads={org.leads} onOpen={onOpen} />
         <Card className="animate-fade-up p-6" style={{ animationDelay: "180ms" }}>
           <SectionTitle icon={Sparkles} color="text-violet-500">לידים אחרונים</SectionTitle>
@@ -813,22 +766,6 @@ function Team({ org, onInvite, onRole, onRemove, notify, canManage, meId }) {
 
 /* ---------------------------------- settings ---------------------------------- */
 
-function Toggle({ checked, onChange, disabled, icon: Icon, title, text }) {
-  return (
-    <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)}
-      className={`flex items-center gap-3 rounded-2xl border p-3.5 text-start transition duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${checked ? "border-rose-200 bg-rose-50/60" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${checked ? "bg-rose-100 text-rose-600" : "bg-slate-100 text-slate-400"}`}><Icon size={19} /></span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[15px] font-semibold text-slate-800">{title}</span>
-        <span className="block text-sm text-slate-500">{text}</span>
-      </span>
-      <span className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-300 ${checked ? "bg-gradient-to-l from-rose-500 to-pink-500" : "bg-slate-300"}`}>
-        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all duration-300 ${checked ? "start-6" : "start-1"}`} />
-      </span>
-    </button>
-  );
-}
-
 function OrgSettings({ org, onSave, canManage }) {
   const [d, setD] = useState({ name: org.name, domain: org.domain, autoBirthday: org.autoBirthday, autoService: org.autoService });
   return (
@@ -908,6 +845,8 @@ function ConsentBanner({ onClose, a11y, setA11y }) {
 const NAV = [
   { id: "dashboard", label: "דשבורד", icon: LayoutDashboard },
   { id: "kanban", label: "קנבאן לידים", icon: SquareKanban },
+  { id: "calendar", label: "יומן ותורים", icon: CalendarDays },
+  { id: "automations", label: "אוטומציות ובוט", icon: Zap },
   { id: "analytics", label: "אנליטיקה", icon: ChartColumn },
   { id: "team", label: "ניהול צוות", icon: Users },
   { id: "settings", label: "הגדרות ארגון", icon: Settings },
@@ -915,6 +854,8 @@ const NAV = [
 const TITLES = {
   dashboard: ["דשבורד", "תמונת מצב של הארגון"],
   kanban: ["קנבאן לידים", "גררו כרטיסיות בין השלבים לעדכון סטטוס"],
+  calendar: ["יומן ותורים", "שירותים, שעות זמינות, דף הזמנה ציבורי ויומן שבועי"],
+  automations: ["אוטומציות ובוט WhatsApp", "אישורים ותזכורות אוטומטיים ללקוחות, וסימולטור הבוט"],
   analytics: ["אנליטיקה", "מגמות הכנסה, מקורות וביצועי צוות"],
   team: ["ניהול צוות והרשאות", "הזמנת משתמשים והגדרת תפקידי Admin / Agent / Viewer"],
   settings: ["הגדרות ארגון", "פרטי ה-Tenant, תוכנית וחיוב"],
@@ -945,7 +886,7 @@ const HEART_SPOTS = [
   { x: -70, d: 0 }, { x: -30, d: 120 }, { x: 10, d: 40 }, { x: 45, d: 180 }, { x: 80, d: 90 }, { x: -5, d: 240 },
 ];
 
-export default function PulseCRM({ initialOrgs, userId }) {
+export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
   const [db] = useState(createClient);
   const router = useRouter();
 
@@ -1065,7 +1006,17 @@ export default function PulseCRM({ initialOrgs, userId }) {
     if (!name) return;
     const { data, error } = await db.rpc("create_organization", { _name: name, _slug: slugify(name) });
     if (error) return fail(error, "יצירת הארגון נכשלה");
-    const created = { id: data.id, name: data.name, plan: data.plan, domain: "", color: "from-emerald-400 to-teal-500", autoBirthday: true, autoService: true, myRole: "Owner", members: [{ ...me, role: "Owner", color: 0 }], leads: [] };
+    // The database seeds opening hours and booking automations for every new org
+    const [rulesRes, autoRes] = await Promise.all([
+      db.from("availability_rules").select("weekday, start_time, end_time").eq("org_id", data.id).order("weekday"),
+      db.from("automations").select("*").eq("org_id", data.id),
+    ]);
+    const created = {
+      id: data.id, slug: data.slug, name: data.name, plan: data.plan, domain: "", color: "from-emerald-400 to-teal-500", autoBirthday: true, autoService: true, myRole: "Owner",
+      members: [{ ...me, role: "Owner", color: 0 }], leads: [],
+      booking: { enabled: data.booking_enabled, headline: "", slotMinutes: data.booking_slot_minutes, bufferMinutes: data.booking_buffer_minutes, minNoticeHours: data.booking_min_notice_hours, maxDays: data.booking_max_days },
+      services: [], rules: rulesRes.data ?? [], blocks: [], appointments: [], automations: autoRes.data ?? [], jobs: [], calendars: [],
+    };
     setOrgs((all) => [...all, created]);
     setOrgId(created.id); writeLastOrg(created.id); setNewOrgOpen(false); setNewOrgName(""); setPage("dashboard");
     notify(`הארגון ${name} נוצר`);
@@ -1079,6 +1030,9 @@ export default function PulseCRM({ initialOrgs, userId }) {
     notify("הגדרות הארגון נשמרו");
   };
   const signOut = async () => { await db.auth.signOut(); router.replace("/login"); router.refresh(); };
+
+  const todayCount = org.appointments.filter((a) => (a.status === "confirmed" || a.status === "pending") && localParts(a.starts_at).day === todayKey()).length;
+  const moduleProps = { org, db, userId, canEdit, isAdmin, notify, fail, patchOrg, siteUrl, providers, onOpenLead: setLead };
 
   const [title, subtitle] = TITLES[page];
   const rootCls = [
@@ -1108,6 +1062,7 @@ export default function PulseCRM({ initialOrgs, userId }) {
               className={`group flex h-12 items-center gap-3 rounded-xl px-3.5 text-[15px] font-medium transition duration-200 ${active ? "bg-gradient-to-l from-rose-500 to-pink-500 text-white shadow-md shadow-rose-500/25" : "text-slate-600 hover:bg-rose-50 hover:text-rose-700"}`}>
               <n.icon size={20} className={active ? "" : "transition group-hover:animate-wiggle"} />{n.label}
               {n.id === "kanban" && <span className={`ms-auto rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${active ? "bg-white/25 text-white" : "bg-rose-100 text-rose-700"}`}>{org.leads.filter(isOpen).length}</span>}
+              {n.id === "calendar" && todayCount > 0 && <span suppressHydrationWarning className={`ms-auto rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${active ? "bg-white/25 text-white" : "bg-violet-100 text-violet-700"}`}>{todayCount} היום</span>}
             </button>
           );
         })}
@@ -1175,6 +1130,8 @@ export default function PulseCRM({ initialOrgs, userId }) {
             <div key={`${org.id}-${page}`} className="animate-fade-up">
             {page === "dashboard" && <Dashboard org={org} onOpen={setLead} go={setPage} onAdd={canEdit ? newLead : null} />}
             {page === "kanban" && <Kanban org={org} onMove={moveLead} onOpen={setLead} onAdd={newLead} query={query} canEdit={canEdit} />}
+            {page === "calendar" && <CalendarPage key={org.id} {...moduleProps} />}
+            {page === "automations" && <AutomationsPage key={org.id} {...moduleProps} />}
             {page === "analytics" && <Analytics org={org} />}
             {page === "team" && <Team org={org} onInvite={invite} onRole={changeRole} onRemove={removeMember} notify={notify} canManage={isAdmin} meId={userId} />}
             {page === "settings" && <OrgSettings key={org.id} org={org} onSave={saveOrg} canManage={isAdmin} />}
