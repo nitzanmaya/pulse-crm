@@ -60,16 +60,28 @@ export type UiOrg = {
   appointments: Tables<"appointments">[]
   automations: Tables<"automations">[]
   jobs: Tables<"notification_jobs">[]
-  calendars: Pick<Tables<"calendar_connections">, "id" | "provider" | "account_email" | "calendar_id" | "status" | "last_synced_at">[]
+  calendars: Pick<Tables<"calendar_connections">, "id" | "provider" | "account_email" | "calendar_id" | "status" | "last_synced_at" | "last_error">[]
+  bot: UiBot
 }
 
-export type Providers = { whatsapp: "meta" | "simulated"; email: boolean; google: boolean; cron: boolean }
+export type UiBot = {
+  settings: Tables<"bot_settings"> | null
+  scripts: Record<string, string>
+  faqs: Tables<"bot_faqs">[]
+  menu: Tables<"bot_menu_items">[]
+}
+
+export type Providers = { whatsapp: "meta" | "simulated"; webhook: boolean; appSecret: boolean; verifyToken: boolean; email: boolean; google: boolean; cron: boolean }
 
 export function providerStatus(): Providers {
   return {
     whatsapp: process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID ? "meta" : "simulated",
+    // The bot needs the token, the app secret (signature) and the CRON_SECRET (DB access)
+    webhook: Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_APP_SECRET && process.env.CRON_SECRET),
+    appSecret: Boolean(process.env.WHATSAPP_APP_SECRET),
+    verifyToken: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
     email: Boolean(process.env.RESEND_API_KEY),
-    google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.CRON_SECRET),
     cron: Boolean(process.env.CRON_SECRET),
   }
 }
@@ -107,7 +119,7 @@ export function toUiLead(l: Tables<"leads">): UiLead {
 
 export async function loadOrgs(supabase: SupabaseClient<Database>, userId: string): Promise<UiOrg[]> {
   const since = new Date(Date.now() - 60 * 86400000).toISOString()
-  const [orgsRes, membersRes, leadsRes, invitesRes, servicesRes, rulesRes, blocksRes, apptsRes, autoRes, jobsRes, calRes] = await Promise.all([
+  const [orgsRes, membersRes, leadsRes, invitesRes, servicesRes, rulesRes, blocksRes, apptsRes, autoRes, jobsRes, calRes, botRes, scriptsRes, faqsRes, menuRes] = await Promise.all([
     supabase.from("organizations").select("*").order("created_at"),
     supabase.from("memberships").select("*").order("created_at"),
     supabase.from("leads").select("*").order("position").order("created_at", { ascending: false }),
@@ -119,7 +131,11 @@ export async function loadOrgs(supabase: SupabaseClient<Database>, userId: strin
     supabase.from("appointments").select("*").gte("starts_at", since).order("starts_at").limit(2000),
     supabase.from("automations").select("*").order("created_at"),
     supabase.from("notification_jobs").select("*").order("created_at", { ascending: false }).limit(200),
-    supabase.from("calendar_connections").select("id, org_id, provider, account_email, calendar_id, status, last_synced_at"),
+    supabase.from("calendar_connections").select("id, org_id, provider, account_email, calendar_id, status, last_synced_at, last_error"),
+    supabase.from("bot_settings").select("*"),
+    supabase.from("bot_scripts").select("org_id, key, body"),
+    supabase.from("bot_faqs").select("*").order("position").order("created_at"),
+    supabase.from("bot_menu_items").select("*").order("position").order("created_at"),
   ])
 
   const orgs = orgsRes.data ?? []
@@ -190,6 +206,12 @@ export async function loadOrgs(supabase: SupabaseClient<Database>, userId: strin
       automations: (autoRes.data ?? []).filter((x) => x.org_id === org.id),
       jobs: (jobsRes.data ?? []).filter((x) => x.org_id === org.id).slice(0, 40),
       calendars: (calRes.data ?? []).filter((x) => x.org_id === org.id),
+      bot: {
+        settings: (botRes.data ?? []).find((x) => x.org_id === org.id) ?? null,
+        scripts: Object.fromEntries((scriptsRes.data ?? []).filter((x) => x.org_id === org.id).map((x) => [x.key, x.body])),
+        faqs: (faqsRes.data ?? []).filter((x) => x.org_id === org.id),
+        menu: (menuRes.data ?? []).filter((x) => x.org_id === org.id),
+      },
     }
   })
 }

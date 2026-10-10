@@ -6,13 +6,14 @@ import { createClient } from "@/lib/supabase/client";
 import { Card, Avatar, ICON_NUDGE, Btn, Field, inputCls, RoleBadge, SectionTitle, Modal, Toggle } from "@/components/ui";
 import CalendarPage from "@/components/booking/CalendarPage";
 import AutomationsPage from "@/components/booking/AutomationsPage";
+import BotAdminPage from "@/components/bot/BotAdminPage";
 import { localParts, fmtTime, todayKey, WEEKDAYS_SHORT, serviceColor } from "@/lib/booking/shared";
 import {
   LayoutDashboard, SquareKanban, ChartColumn, Users, Settings, ChevronsUpDown, Plus, Check,
   Search, Bell, X, Mail, ShieldCheck, UserPlus, TrendingUp, TrendingDown, Wallet, Target,
   Clock, Tag, Phone, Building2, Cookie, Accessibility, Trash2, Calendar, Sparkles, LogOut,
   Menu, Activity, Type, Contrast, GripVertical, Send, Globe, Percent, Heart, ArrowLeft,
-  Cake, BellRing, Wrench, CalendarCheck, CalendarDays, Zap,
+  Cake, BellRing, Wrench, CalendarCheck, CalendarDays, Zap, Bot,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -846,7 +847,8 @@ const NAV = [
   { id: "dashboard", label: "דשבורד", icon: LayoutDashboard },
   { id: "kanban", label: "קנבאן לידים", icon: SquareKanban },
   { id: "calendar", label: "יומן ותורים", icon: CalendarDays },
-  { id: "automations", label: "אוטומציות ובוט", icon: Zap },
+  { id: "bot", label: "בוט WhatsApp", icon: Bot },
+  { id: "automations", label: "אוטומציות", icon: Zap },
   { id: "analytics", label: "אנליטיקה", icon: ChartColumn },
   { id: "team", label: "ניהול צוות", icon: Users },
   { id: "settings", label: "הגדרות ארגון", icon: Settings },
@@ -855,7 +857,8 @@ const TITLES = {
   dashboard: ["דשבורד", "תמונת מצב של הארגון"],
   kanban: ["קנבאן לידים", "גררו כרטיסיות בין השלבים לעדכון סטטוס"],
   calendar: ["יומן ותורים", "שירותים, שעות זמינות, דף הזמנה ציבורי ויומן שבועי"],
-  automations: ["אוטומציות ובוט WhatsApp", "אישורים ותזכורות אוטומטיים ללקוחות, וסימולטור הבוט"],
+  bot: ["בוט WhatsApp", "שיחות חיות, תוכן הבוט, הגדרות יומן וחיבור למספר העסקי"],
+  automations: ["אוטומציות", "אישורים ותזכורות אוטומטיים ללקוחות"],
   analytics: ["אנליטיקה", "מגמות הכנסה, מקורות וביצועי צוות"],
   team: ["ניהול צוות והרשאות", "הזמנת משתמשים והגדרת תפקידי Admin / Agent / Viewer"],
   settings: ["הגדרות ארגון", "פרטי ה-Tenant, תוכנית וחיוב"],
@@ -903,6 +906,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
   const [toast, setToast] = useState(null);
   const [hearts, setHearts] = useState(0);
   const toastTimer = useRef(null);
+  const [botTab, setBotTab] = useState(null);
 
   // Restore the last active org after hydration
   useEffect(() => {
@@ -930,6 +934,15 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
   const celebrate = (msg) => { setHearts((n) => n + 1); notify(msg, "win"); };
   const patchOrg = (fn) => setOrgs((all) => all.map((o) => (o.id === org.id ? fn(o) : o)));
   const fail = (error, msg = "הפעולה נכשלה") => { console.error(error); notify(error?.code === "42501" || error?.code === "PGRST116" ? "אין לך הרשאה לפעולה הזו" : msg, "error"); };
+
+  // Back from Google OAuth (/api/calendar/google/callback?calendar=...)
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("calendar");
+    if (!result) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    const msg = { connected: ["יומן Google חובר! התורים הקרובים מסונכרנים אליו", "win"], denied: ["החיבור ל-Google בוטל", "error"], forbidden: ["רק מנהלי הארגון יכולים לחבר יומן", "error"], not_configured: ["חיבור Google עוד לא הוגדר בשרת", "error"], failed: ["החיבור ל-Google נכשל, נסו שוב", "error"] }[result];
+    if (msg) { setPage("bot"); setBotTab("calendar"); notify(...msg); } // eslint-disable-line react-hooks/set-state-in-effect
+  }, []);
 
   const switchOrg = (id) => { setOrgId(id); writeLastOrg(id); setNavOpen(false); notify("הוחלף ארגון פעיל"); };
 
@@ -1007,15 +1020,19 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
     const { data, error } = await db.rpc("create_organization", { _name: name, _slug: slugify(name) });
     if (error) return fail(error, "יצירת הארגון נכשלה");
     // The database seeds opening hours and booking automations for every new org
-    const [rulesRes, autoRes] = await Promise.all([
+    const [rulesRes, autoRes, botRes, faqsRes, menuRes] = await Promise.all([
       db.from("availability_rules").select("weekday, start_time, end_time").eq("org_id", data.id).order("weekday"),
       db.from("automations").select("*").eq("org_id", data.id),
+      db.from("bot_settings").select("*").eq("org_id", data.id).maybeSingle(),
+      db.from("bot_faqs").select("*").eq("org_id", data.id).order("position"),
+      db.from("bot_menu_items").select("*").eq("org_id", data.id).order("position"),
     ]);
     const created = {
       id: data.id, slug: data.slug, name: data.name, plan: data.plan, domain: "", color: "from-emerald-400 to-teal-500", autoBirthday: true, autoService: true, myRole: "Owner",
       members: [{ ...me, role: "Owner", color: 0 }], leads: [],
       booking: { enabled: data.booking_enabled, headline: "", slotMinutes: data.booking_slot_minutes, bufferMinutes: data.booking_buffer_minutes, minNoticeHours: data.booking_min_notice_hours, maxDays: data.booking_max_days },
       services: [], rules: rulesRes.data ?? [], blocks: [], appointments: [], automations: autoRes.data ?? [], jobs: [], calendars: [],
+      bot: { settings: botRes.data ?? null, scripts: {}, faqs: faqsRes.data ?? [], menu: menuRes.data ?? [] },
     };
     setOrgs((all) => [...all, created]);
     setOrgId(created.id); writeLastOrg(created.id); setNewOrgOpen(false); setNewOrgName(""); setPage("dashboard");
@@ -1131,6 +1148,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
             {page === "dashboard" && <Dashboard org={org} onOpen={setLead} go={setPage} onAdd={canEdit ? newLead : null} />}
             {page === "kanban" && <Kanban org={org} onMove={moveLead} onOpen={setLead} onAdd={newLead} query={query} canEdit={canEdit} />}
             {page === "calendar" && <CalendarPage key={org.id} {...moduleProps} />}
+            {page === "bot" && <BotAdminPage key={`${org.id}-${botTab}`} {...moduleProps} initialTab={botTab} />}
             {page === "automations" && <AutomationsPage key={org.id} {...moduleProps} />}
             {page === "analytics" && <Analytics org={org} />}
             {page === "team" && <Team org={org} onInvite={invite} onRole={changeRole} onRemove={removeMember} notify={notify} canManage={isAdmin} meId={userId} />}
@@ -1164,7 +1182,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
         </div>
       </Modal>
 
-      {canEdit && !banner && (
+      {canEdit && !banner && page !== "bot" && (
         <button onClick={newLead} aria-label="ליד חדש"
           className="fixed bottom-5 end-5 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-xl shadow-rose-500/40 transition active:scale-90 sm:hidden">
           <Plus size={26} strokeWidth={2.5} />

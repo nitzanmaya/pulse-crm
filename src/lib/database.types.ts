@@ -214,6 +214,76 @@ type Automation = {
   trigger_event: "lead_created" | "stage_changed" | "appointment_booked" | "message_received"
 }
 
+type BotSettings = {
+  org_id: string
+  is_enabled: boolean
+  whatsapp_phone_number_id: string | null
+  whatsapp_display_phone: string | null
+  handoff_keywords: string[]
+  restart_keywords: string[]
+  updated_at: string
+}
+type BotScript = { id: string; org_id: string; key: string; body: string; updated_at: string }
+type BotFaq = { id: string; org_id: string; question: string; answer: string; keywords: string[]; is_active: boolean; position: number; created_at: string }
+type BotMenuItem = {
+  id: string
+  org_id: string
+  label: string
+  description: string | null
+  action: "book" | "faqs" | "faq" | "handoff" | "reply"
+  faq_id: string | null
+  reply: string | null
+  is_active: boolean
+  position: number
+  created_at: string
+}
+type BotConversation = {
+  id: string
+  org_id: string
+  wa_id: string
+  contact_name: string | null
+  lead_id: string | null
+  state: "WELCOME" | "FAQ" | "SERVICE_SELECT" | "SERVICE_QUESTIONS" | "DATE_SELECT" | "TIME_SELECT" | "ADDRESS" | "CONFIRM" | "CONFIRMED"
+  mode: "bot" | "manual_agent"
+  context: Json
+  version: number
+  assigned_to: string | null
+  unread: number
+  last_message_at: string
+  last_inbound_at: string | null
+  created_at: string
+}
+type BotConversationMessage = {
+  id: string
+  org_id: string
+  conversation_id: string
+  direction: "inbound" | "outbound"
+  sender: "customer" | "bot" | "agent"
+  body: string
+  payload: Json | null
+  wa_message_id: string | null
+  status: "received" | "queued" | "sent" | "delivered" | "read" | "simulated" | "failed"
+  error: string | null
+  sender_id: string | null
+  created_at: string
+}
+
+export type CalendarPendingEvent = {
+  appointment_id: string
+  org_id: string
+  status: AppointmentStatus
+  google_event_id: string | null
+  starts_at: string
+  ends_at: string
+  customer_name: string
+  phone: string | null
+  address: string | null
+  notes: string | null
+  service_name: string | null
+  answers: Json
+  org_name: string
+}
+
 type Table<R, Required extends keyof R> = {
   Row: R
   Insert: Partial<R> & Pick<R, Required>
@@ -240,6 +310,12 @@ export type Database = {
       calendar_connections: Table<CalendarConnection, "org_id">
       external_busy: Table<ExternalBusy, "org_id" | "connection_id" | "external_event_id" | "starts_at" | "ends_at">
       notification_jobs: Table<NotificationJob, "org_id" | "appointment_id" | "channel" | "kind" | "send_at">
+      bot_settings: Table<BotSettings, "org_id">
+      bot_scripts: Table<BotScript, "org_id" | "key" | "body">
+      bot_faqs: Table<BotFaq, "org_id" | "question" | "answer">
+      bot_menu_items: Table<BotMenuItem, "org_id" | "label" | "action">
+      bot_conversations: Table<BotConversation, "org_id" | "wa_id">
+      bot_conversation_messages: Table<BotConversationMessage, "org_id" | "conversation_id" | "direction" | "sender">
     }
     Views: { [_ in never]: never }
     Functions: {
@@ -271,6 +347,29 @@ export type Database = {
         Returns: NotificationJobClaim[]
       }
       finish_notification_jobs: { Args: { _secret: string; _results: Json }; Returns: number }
+      bot_ingest: {
+        Args: { _secret: string; _phone_number_id: string; _wa_id: string; _name: string | null; _wa_message_id: string; _body: string; _payload?: Json | null }
+        Returns: Json
+      }
+      bot_save_turn: {
+        Args: { _secret: string; _conversation: string; _expected_version: number | null; _state: string; _mode: string; _context: Json; _outgoing?: Json; _appointment?: string | null }
+        Returns: Json
+      }
+      bot_update_messages: { Args: { _secret: string; _updates: Json }; Returns: number }
+      calendar_store_connection: {
+        Args: { _secret: string; _org: string; _user: string; _email: string | null; _calendar_id: string; _refresh_token: string; _access_token: string; _expires_at: string }
+        Returns: string
+      }
+      calendar_get_access: {
+        Args: { _secret: string; _org: string }
+        Returns: { connection_id: string; calendar_id: string; refresh_token: string; access_token: string | null; expires_at: string | null }[]
+      }
+      calendar_save_access: {
+        Args: { _secret: string; _connection: string; _access_token: string | null; _expires_at: string | null; _error?: string | null }
+        Returns: undefined
+      }
+      calendar_pending_events: { Args: { _secret: string; _appointment?: string | null; _limit?: number }; Returns: CalendarPendingEvent[] }
+      calendar_mark_synced: { Args: { _secret: string; _appointment: string; _event_id: string | null; _error?: string | null }; Returns: undefined }
     }
     Enums: { lead_stage: LeadStage; member_role: MemberRole }
     CompositeTypes: { [_ in never]: never }

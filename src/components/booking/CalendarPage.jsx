@@ -27,6 +27,9 @@ const hhmm = (t) => t.slice(0, 5);
 const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 const weekStartOf = (day) => addDays(day, -dowOf(day));
 
+// Pushes new/moved/cancelled appointments to Google Calendar when one is connected
+const syncCalendar = (org) => (org.calendars.some((c) => c.status === "active") ? fetch("/api/calendar/google/sync", { method: "POST" }).catch(() => {}) : Promise.resolve());
+
 const StatusChip = ({ status }) => (
   <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS[status].cls}`}>{STATUS[status].label}</span>
 );
@@ -326,6 +329,7 @@ function AppointmentModal({ appt, org, db, userId, canEdit, isAdmin, notify, fai
     setBusy(false);
     if (error) return fail(error, error.code === "23P01" ? "השעה הזו כבר תפוסה ביומן" : "שמירת התור נכשלה");
     patchOrg((o) => ({ ...o, appointments: (isNew ? [...o.appointments, data] : o.appointments.map((a) => (a.id === data.id ? data : a))).sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1)) }));
+    syncCalendar(org);
     notify(isNew ? `התור של ${data.customer_name} נקבע ל${fmtDate(data.starts_at, { weekday: "long", day: "numeric", month: "numeric" })} ב-${fmtTime(data.starts_at)}` : "התור עודכן");
     onClose();
   };
@@ -340,11 +344,17 @@ function AppointmentModal({ appt, org, db, userId, canEdit, isAdmin, notify, fai
       appointments: o.appointments.map((a) => (a.id === data.id ? data : a)),
       leads: status === "completed" && data.lead_id ? o.leads.map((l) => (l.id === data.lead_id ? { ...l, lastService: localParts(data.starts_at).day } : l)) : o.leads,
     }));
+    syncCalendar(org);
     notify(status === "completed" ? "סומן כבוצע, השירות האחרון עודכן בכרטיס הלקוח" : status === "cancelled" ? "התור בוטל והתזכורות נעצרו" : "הסטטוס עודכן");
     onClose();
   };
 
   const remove = async () => {
+    // Cancel first so the Google event is removed, then delete the row
+    if (appt.google_event_id && org.calendars.some((c) => c.status === "active")) {
+      await db.from("appointments").update({ status: "cancelled" }).eq("id", appt.id);
+      await syncCalendar(org);
+    }
     const { error } = await db.from("appointments").delete().eq("id", appt.id).select("id").single();
     if (error) return fail(error, "מחיקת התור נכשלה");
     patchOrg((o) => ({ ...o, appointments: o.appointments.filter((a) => a.id !== appt.id) }));
@@ -656,7 +666,7 @@ function ServicesTab({ org, db, isAdmin, notify, fail, patchOrg }) {
 /*  Availability                                                       */
 /* ------------------------------------------------------------------ */
 
-function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
+export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
   const [week, setWeek] = useState(() => Array.from({ length: 7 }, (_, d) => org.rules.filter((r) => r.weekday === d).map((r) => ({ start: hhmm(r.start_time), end: hhmm(r.end_time) }))));
   const [b, setB] = useState(org.booking);
   const [block, setBlock] = useState({ starts_on: todayKey(), ends_on: todayKey(), reason: "" });
@@ -779,7 +789,6 @@ function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
 function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, providers }) {
   const url = `${siteUrl.replace(/\/$/, "")}/book/${org.slug}`;
   const [headline, setHeadline] = useState(org.booking.headline);
-  const google = org.calendars.find((c) => c.provider === "google");
   const copy = async () => { try { await navigator.clipboard.writeText(url); notify("הקישור הועתק"); } catch { notify("לא ניתן להעתיק, סמנו את הקישור ידנית", "error"); } };
   const update = async (patch, ui) => {
     const { error } = await db.from("organizations").update(patch).eq("id", org.id).select("id").single();
@@ -818,25 +827,78 @@ function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, pro
         {org.services.filter((s) => s.is_active).length === 0 && <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">אין שירותים פעילים, הדף עדיין ריק. הוסיפו שירות בלשונית ״שירותים״.</p>}
       </Card>
 
-      <Card className="animate-fade-up p-6" style={{ animationDelay: "80ms" }}>
-        <SectionTitle icon={CalendarDays} color="text-sky-500">סנכרון Google Calendar</SectionTitle>
-        <div className="mt-4 flex items-center gap-4 rounded-2xl border border-slate-200 p-4">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden><rect x="3" y="4" width="18" height="17" rx="3" fill="#fff" stroke="#4285F4" strokeWidth="2" /><rect x="3" y="4" width="18" height="5" rx="2" fill="#4285F4" /><text x="12" y="18.5" textAnchor="middle" fontSize="8" fontWeight="700" fill="#34A853">31</text></svg>
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[15px] font-semibold text-slate-800">{google ? google.account_email || google.calendar_id : "לא מחובר"}</div>
-            <div className="text-sm text-slate-500">{google ? `סטטוס: ${google.status}` : providers.google ? "מוכן לחיבור" : "ממתין להגדרת חשבון Google Cloud (OAuth)"}</div>
-          </div>
-          <Btn variant="ghost" disabled title="החיבור יופעל אחרי הגדרת OAuth"><RefreshCw size={17} />חיבור</Btn>
-        </div>
-        <ul className="mt-4 flex flex-col gap-2.5 text-sm text-slate-600">
-          <li className="flex gap-2"><ArrowLeft size={16} className="mt-0.5 shrink-0 text-sky-500" />כל תור חדש, שינוי או ביטול יירשמו ביומן Google שלכם.</li>
-          <li className="flex gap-2"><ArrowLeft size={16} className="mt-0.5 shrink-0 text-sky-500" />אירועים פרטיים מהיומן ייחסמו אוטומטית בדף ההזמנה, כדי שלא ייקבע תור על פגישה.</li>
-          <li className="flex gap-2"><ArrowLeft size={16} className="mt-0.5 shrink-0 text-sky-500" />מבנה הנתונים כבר מוכן: כל תור שומר מזהה אירוע ומצב סנכרון.</li>
-        </ul>
-      </Card>
+      <GoogleCalendarCard org={org} db={db} isAdmin={isAdmin} notify={notify} fail={fail} patchOrg={patchOrg} providers={providers} delay={80} />
     </div>
+  );
+}
+
+const GOOGLE_STATUS = {
+  active: { label: "מחובר ומסונכרן", cls: "bg-emerald-50 text-emerald-700" },
+  pending: { label: "ממתין לאישור", cls: "bg-amber-50 text-amber-700" },
+  error: { label: "החיבור נכשל, צריך לחבר מחדש", cls: "bg-red-50 text-red-600" },
+  revoked: { label: "ההרשאה בוטלה", cls: "bg-slate-100 text-slate-500" },
+};
+
+export function GoogleCalendarCard({ org, db, isAdmin, notify, fail, patchOrg, providers, delay = 0 }) {
+  const google = org.calendars.find((c) => c.provider === "google");
+  const [busy, setBusy] = useState(false);
+  const pending = org.appointments.filter((a) => a.sync_status === "pending").length;
+  const synced = org.appointments.filter((a) => a.sync_status === "synced").length;
+  const disconnect = async () => {
+    setBusy(true);
+    const { error } = await db.from("calendar_connections").delete().eq("id", google.id).select("id").single();
+    setBusy(false);
+    if (error) return fail(error, "ניתוק היומן נכשל");
+    patchOrg((o) => ({ ...o, calendars: o.calendars.filter((c) => c.id !== google.id) }));
+    notify("יומן Google נותק");
+  };
+  const syncNow = async () => {
+    setBusy(true);
+    const res = await fetch("/api/calendar/google/sync", { method: "POST" }).then((r) => r.json()).catch(() => null);
+    setBusy(false);
+    notify(res && !res.error ? `סונכרנו ${res.synced ?? 0} תורים ליומן Google` : "הסנכרון נכשל", res && !res.error ? "ok" : "error");
+  };
+  const st = google ? GOOGLE_STATUS[google.status] ?? GOOGLE_STATUS.pending : null;
+
+  return (
+    <Card className="animate-fade-up p-6" style={{ animationDelay: `${delay}ms` }}>
+      <SectionTitle icon={CalendarDays} color="text-sky-500">סנכרון Google Calendar</SectionTitle>
+      <div className="mt-4 flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 p-4">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden><rect x="3" y="4" width="18" height="17" rx="3" fill="#fff" stroke="#4285F4" strokeWidth="2" /><rect x="3" y="4" width="18" height="5" rx="2" fill="#4285F4" /><text x="12" y="18.5" textAnchor="middle" fontSize="8" fontWeight="700" fill="#34A853">31</text></svg>
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-semibold text-slate-800" dir="auto" style={{ textAlign: "start" }}>{google ? google.account_email || google.calendar_id : "לא מחובר"}</div>
+          {st ? <span className={`mt-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${st.cls}`}>{st.label}</span>
+            : <div className="text-sm text-slate-500">{providers.google ? "מוכן לחיבור בלחיצה" : "ממתין להגדרת OAuth ב-Google Cloud"}</div>}
+        </div>
+        {isAdmin && !google && (
+          providers.google
+            ? <a href={`/api/calendar/google/connect?org=${org.id}`} className="inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-l from-sky-500 to-indigo-500 px-5 text-[15px] font-semibold text-white shadow-lg shadow-sky-500/25 transition hover:-translate-y-0.5"><RefreshCw size={17} />חיבור Google</a>
+            : <Btn variant="ghost" disabled title="צריך להגדיר GOOGLE_CLIENT_ID ו-GOOGLE_CLIENT_SECRET"><RefreshCw size={17} />חיבור</Btn>
+        )}
+        {isAdmin && google && (
+          <div className="flex gap-2">
+            {google.status === "error" && <a href={`/api/calendar/google/connect?org=${org.id}`} className="inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-l from-sky-500 to-indigo-500 px-4 text-sm font-semibold text-white shadow-md">חיבור מחדש</a>}
+            {google.status === "active" && <Btn variant="ghost" onClick={syncNow} disabled={busy} className="h-11 px-4 text-sm"><RefreshCw size={16} className={busy ? "animate-spin" : ""} />סנכרון</Btn>}
+            <Btn variant="danger" onClick={disconnect} disabled={busy} className="h-11 px-4 text-sm"><X size={16} />ניתוק</Btn>
+          </div>
+        )}
+      </div>
+      {google?.status === "active" && (
+        <div className="mt-3 flex flex-wrap gap-2 text-sm">
+          <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-700 tabular-nums">{synced} תורים ביומן</span>
+          {pending > 0 && <span className="rounded-full bg-amber-50 px-3 py-1 font-semibold text-amber-700 tabular-nums">{pending} ממתינים לסנכרון</span>}
+          {google.last_synced_at && <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">סונכרן לאחרונה {fmtDate(google.last_synced_at, { day: "numeric", month: "numeric" })} {fmtTime(google.last_synced_at)}</span>}
+        </div>
+      )}
+      {google?.last_error && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{google.last_error}</p>}
+      <ul className="mt-4 flex flex-col gap-2.5 text-sm text-slate-600">
+        <li className="flex gap-2"><ArrowLeft size={16} className="mt-0.5 shrink-0 text-sky-500" />כל תור חדש, שינוי או ביטול (מהדף, מהבוט או ידני) נרשם ביומן Google שלכם.</li>
+        <li className="flex gap-2"><ArrowLeft size={16} className="mt-0.5 shrink-0 text-sky-500" />שעות תפוסות ביומן Google לא יוצעו ללקוחות בבוט ובדף ההזמנה.</li>
+        <li className="flex gap-2"><ArrowLeft size={16} className="mt-0.5 shrink-0 text-sky-500" />אם החיבור נופל, התורים נשמרים במערכת ומסונכרנים שוב בריצה היומית.</li>
+      </ul>
+    </Card>
   );
 }
 
