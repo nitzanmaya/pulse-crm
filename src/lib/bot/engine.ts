@@ -64,6 +64,7 @@ const STEP_STATE: Record<BotState["step"], ConversationState> = {
   day: "DATE_SELECT",
   time: "TIME_SELECT",
   address: "ADDRESS",
+  email: "ADDRESS",
   confirm: "CONFIRM",
   done: "CONFIRMED",
 }
@@ -212,7 +213,7 @@ export async function engineTurn(conv: Conversation, input: { text?: string; opt
       const flow = conv.context.flow
       if (!flow) return welcome(ctx)
       // A question in the middle of booking gets answered, then the flow resumes
-      const freeText = flow.step === "address" || (flow.step === "question" && !flow.options.length)
+      const freeText = flow.step === "address" || flow.step === "email" || (flow.step === "question" && !flow.options.length)
       if (!input.optionId && !freeText && !pick(flow.options, input)) {
         const faq = matchFaq(text, ctx.faqs)
         if (faq) return answerFaq(ctx, faq, { state: conv.state, context: conv.context }, flow.options)

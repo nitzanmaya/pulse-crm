@@ -3,7 +3,7 @@
 // same function later (state per phone number, ctx.book -> book_appointment).
 //
 // greeting -> service -> follow-up questions (quantity...) -> day -> time ->
-// address -> summary -> booked (calendar confirmation)
+// address -> email (optional) -> summary -> booked (calendar confirmation)
 
 import { quote, localParts, fmtTime, fmtDay, WEEKDAYS_HE, minutesLabel, type Answers, type BookableService } from "@/lib/booking/shared"
 import { DEFAULT_BOT_TEXTS, fill, type BotTextKey, type BotTexts } from "@/lib/bot/texts"
@@ -12,7 +12,7 @@ export type Slot = { start: string; end: string }
 export type BotOption = { id: string; label: string; description?: string }
 export type BotCard = { title: string; lines: string[] }
 export type BotMessage = { text: string; options?: BotOption[]; card?: BotCard }
-export type BotStep = "service" | "question" | "day" | "time" | "address" | "confirm" | "done"
+export type BotStep = "service" | "question" | "day" | "time" | "address" | "email" | "confirm" | "done"
 
 export type BotState = {
   step: BotStep
@@ -24,6 +24,7 @@ export type BotState = {
   day?: string
   slot?: Slot
   address?: string
+  email?: string
 }
 
 export type BotContext = {
@@ -31,7 +32,7 @@ export type BotContext = {
   services: BookableService[]
   getSlots: (service: BookableService, answers: Answers) => Promise<Slot[]>
   // Real bookings (webhook); the simulator leaves it out
-  book?: (s: { service: BookableService; answers: Answers; slot: Slot; address: string }) => Promise<{ ok: boolean; id?: string; error?: string }>
+  book?: (s: { service: BookableService; answers: Answers; slot: Slot; address: string; email?: string }) => Promise<{ ok: boolean; id?: string; error?: string }>
   // Scripts edited in the admin (defaults in texts.ts)
   texts?: BotTexts
   customerName?: string
@@ -45,7 +46,7 @@ export const BOT_STEPS: { id: string; label: string; steps: (BotStep | "greeting
   { id: "service", label: "בחירת שירות", steps: ["service"] },
   { id: "question", label: "שאלות כמות", steps: ["question"] },
   { id: "time", label: "בחירת מועד", steps: ["day", "time"] },
-  { id: "address", label: "כתובת", steps: ["address"] },
+  { id: "address", label: "כתובת ומייל", steps: ["address", "email"] },
   { id: "confirm", label: "אישור ביומן", steps: ["confirm", "done"] },
 ]
 
@@ -119,6 +120,16 @@ function askTime(ctx: BotContext, state: BotState): BotMessage {
   return { text: say(ctx, "time_prompt", { date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "numeric" }), service: serviceOf(ctx, state).name }), options: state.options }
 }
 
+// Optional: lets the reminder go out by email; anyone can skip it
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+const SKIP_WORDS = ["דלג", "דילוג", "אין", "אין לי", "לא", "בלי", "skip"]
+
+function askEmail(state: BotState): BotMessage {
+  state.step = "email"
+  state.options = [{ id: "skip", label: "דלג ⏭️" }]
+  return { text: "📧 רוצה גם תזכורת במייל לפני הביקור?\nאפשר לכתוב כאן את כתובת המייל, או ללחוץ ״דלג״ ולהמשיך.", options: state.options }
+}
+
 function summary(ctx: BotContext, state: BotState): BotMessage[] {
   const service = serviceOf(ctx, state)
   const q = quote(service, state.answers)
@@ -132,6 +143,7 @@ function summary(ctx: BotContext, state: BotState): BotMessage[] {
       lines: [
         `🗓️ ${fmtDay(state.day!, { weekday: "long", day: "numeric", month: "long" })} · ${fmtTime(state.slot!.start)}`,
         `📍 ${state.address}`,
+        ...(state.email ? [`📧 ${state.email}`] : []),
         ...extras.map((e) => `• ${e}`),
         `⏱️ ${minutesLabel(q.minutes)} · 💰 ${ils(q.price)}`,
       ],
@@ -223,6 +235,16 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
       const a = (input.text ?? "").trim()
       if (a.length < 4) return reply({ text: "אפשר כתובת מלאה? למשל: הרצל 12, רמת גן 🏠" })
       state.address = a
+      return reply(askEmail(state))
+    }
+    case "email": {
+      const e = (input.text ?? "").trim().replace(/\s+/g, "")
+      if (input.optionId === "skip" || SKIP_WORDS.includes(t)) {
+        state.email = undefined
+        return reply(...summary(ctx, state))
+      }
+      if (!EMAIL_RE.test(e)) return reply({ text: "נראה שחסר משהו בכתובת 🙈 למשל: dana@gmail.com\nאפשר גם לדלג.", options: state.options })
+      state.email = e.toLowerCase()
       return reply(...summary(ctx, state))
     }
     case "confirm": {
@@ -231,7 +253,7 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
       if (o.id === "change") return reply(...(await askDay(ctx, state, events)))
       const service = serviceOf(ctx, state)
       if (ctx.book) {
-        const r = await ctx.book({ service, answers: state.answers, slot: state.slot!, address: state.address! })
+        const r = await ctx.book({ service, answers: state.answers, slot: state.slot!, address: state.address!, email: state.email })
         if (!r.ok) {
           state.slots = undefined
           return reply({ text: say(ctx, "slot_taken") }, ...(await askDay(ctx, state, events)))
@@ -241,8 +263,10 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
       } else {
         events.push({ kind: "simulated", text: "סימולציה: בבוט האמיתי כאן נוצר תור ביומן ונפתח ליד" })
       }
-      const remind = new Date(new Date(state.slot!.start).getTime() - 24 * 3600 * 1000)
-      events.push({ kind: "reminder", text: `תזכורת WhatsApp תתוזמן ל-${fmtDay(localParts(remind).day, { day: "numeric", month: "numeric" })} ${fmtTime(remind)}` })
+      if (state.email) {
+        const remind = new Date(new Date(state.slot!.start).getTime() - 24 * 3600 * 1000)
+        events.push({ kind: "reminder", text: `תזכורת במייל תתוזמן ל-${fmtDay(localParts(remind).day, { day: "numeric", month: "numeric" })} ${fmtTime(remind)}` })
+      }
       state.step = "done"
       state.options = [{ id: "restart", label: "קביעת תור נוסף" }]
       return reply(
@@ -257,7 +281,13 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
             ],
           },
         },
-        { text: say(ctx, "confirmed", { service: service.name, date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "long" }), time: fmtTime(state.slot!.start) }), options: state.options },
+        {
+          text: [
+            say(ctx, "confirmed", { service: service.name, date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "long" }), time: fmtTime(state.slot!.start) }),
+            state.email && `📧 יום לפני הביקור נשלח תזכורת ל-${state.email}`,
+          ].filter(Boolean).join("\n"),
+          options: state.options,
+        },
       )
     }
     default: {

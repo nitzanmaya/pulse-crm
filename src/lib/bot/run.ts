@@ -64,7 +64,7 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
       customerName: conv.contact_name ?? msg.name,
       services: org.booking_enabled ? services : [],
       getSlots: (service, answers) => getAvailableSlots({ db, slug: org.slug, orgId: org.id, serviceId: service.id, answers, days: 14 }),
-      book: async ({ service, answers, slot, address }) => {
+      book: async ({ service, answers, slot, address, email }) => {
         const { data: booked, error: bookError } = await db.rpc("book_appointment", {
           _slug: org.slug,
           _service: service.id,
@@ -73,6 +73,7 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
           _name: (conv.contact_name ?? msg.name ?? "").trim().length >= 2 ? (conv.contact_name ?? msg.name)! : "לקוח WhatsApp",
           _phone: msg.from,
           _address: address,
+          _email: email ?? null,
           _source: "whatsapp_bot",
         })
         if (bookError) {
