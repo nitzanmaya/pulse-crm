@@ -404,9 +404,8 @@ begin
     raise exception 'forbidden' using errcode = '42501';
   end if;
 
-  -- One Google calendar per org
-  delete from public.calendar_connections where org_id = _org and provider = 'google' and calendar_id <> coalesce(_calendar_id, 'primary');
-
+  -- The app always connects the primary calendar, so the unique key keeps one
+  -- Google connection per org
   insert into public.calendar_connections (org_id, user_id, provider, account_email, calendar_id, sync_direction, status, last_error)
   values (_org, _user, 'google', _email, coalesce(_calendar_id, 'primary'), 'two_way', 'active', null)
   on conflict (org_id, provider, calendar_id) do update
