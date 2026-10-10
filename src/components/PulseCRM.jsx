@@ -809,8 +809,8 @@ function ConsentBanner({ onClose, a11y, setA11y }) {
   const [panel, setPanel] = useState(false);
   const toggle = (k) => setA11y({ ...a11y, [k]: !a11y[k] });
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 p-3 sm:p-4">
-      <div className="mx-auto max-w-4xl animate-pop-in rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl shadow-slate-900/15">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 p-3 sm:p-4 lg:ps-[19rem]">
+      <div className="pointer-events-auto mx-auto max-w-4xl animate-pop-in rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl shadow-slate-900/15">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600"><Cookie size={22} /></span>
           <p className="flex-1 text-sm leading-relaxed text-slate-600">
@@ -865,6 +865,7 @@ const TITLES = {
 };
 
 const ORG_KEY = "pulse:last-org";
+const CONSENT_KEY = "pulse:consent";
 const readLastOrg = () => { try { return localStorage.getItem(ORG_KEY); } catch { return null; } };
 const writeLastOrg = (id) => { try { localStorage.setItem(ORG_KEY, id); } catch {} };
 
@@ -912,6 +913,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
   useEffect(() => {
     const last = readLastOrg();
     if (last && last !== orgId && initialOrgs.some((o) => o.id === last)) setOrgId(last); // eslint-disable-line react-hooks/set-state-in-effect
+    try { if (localStorage.getItem(CONSENT_KEY)) setBanner(false); } catch {}
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const shortcutNew = useRef(null);
@@ -1060,7 +1062,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
   ].join(" ");
 
   const Sidebar = (
-    <aside className="flex h-full w-72 flex-col gap-5 border-s border-slate-200/80 bg-white p-4">
+    <aside className="flex h-full w-72 flex-col gap-5 overflow-y-auto border-s border-slate-200/80 bg-white p-4">
       <div className="flex items-center gap-2.5 px-1 pt-1">
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-pink-500 shadow-lg shadow-rose-500/30">
           <Heart size={20} className="animate-heartbeat fill-white text-white" />
@@ -1084,7 +1086,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
           );
         })}
       </nav>
-      <div className="mt-auto flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
+      <div className="mt-auto flex shrink-0 items-center gap-3 rounded-2xl bg-slate-50 p-3">
         <Avatar member={me} size="h-10 w-10 text-sm" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-semibold text-slate-800">{me.name}</div>
@@ -1189,7 +1191,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
         </button>
       )}
 
-      {banner && <ConsentBanner onClose={() => setBanner(false)} a11y={a11y} setA11y={setA11y} />}
+      {banner && <ConsentBanner onClose={() => { setBanner(false); try { localStorage.setItem(CONSENT_KEY, "1"); } catch {} }} a11y={a11y} setA11y={setA11y} />}
 
       {hearts > 0 && (
         <div key={hearts} aria-hidden className="pointer-events-none fixed bottom-24 left-1/2 z-[60]">
