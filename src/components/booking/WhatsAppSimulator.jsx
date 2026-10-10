@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CheckCheck, MoreVertical, Paperclip, RotateCcw, Send, Smile, Phone, Video, Bot, CalendarCheck, Search, Sparkles, BellRing, FlaskConical } from "lucide-react";
-import { greeting, botTurn, BOT_STEPS } from "@/lib/bot/flow";
+import { ArrowRight, CheckCheck, MoreVertical, Paperclip, RotateCcw, Send, Smile, Phone, Video, Bot, CalendarCheck, Search, Sparkles, BellRing, FlaskConical, HelpCircle, Headset } from "lucide-react";
+import { BOT_STEPS } from "@/lib/bot/flow";
+import { startConversation, engineTurn } from "@/lib/bot/engine";
+import { botTexts } from "@/lib/bot/texts";
 import { EXAMPLE_SERVICES, addDays, dowOf, todayKey, zonedToUtc, quote } from "@/lib/booking/shared";
 
 // Demo slots when the org has no real services / the booking page is off:
@@ -69,7 +71,12 @@ function Bubble({ m, last, onPick }) {
   );
 }
 
-export default function WhatsAppSimulator({ org, db }) {
+// Which progress step a conversation state belongs to
+const STEP_OF = { WELCOME: "greeting", FAQ: "greeting", SERVICE_SELECT: "service", SERVICE_QUESTIONS: "service", DATE_SELECT: "time", TIME_SELECT: "time", ADDRESS: "address", CONFIRM: "confirm", CONFIRMED: "confirm" };
+const QUESTION_STEP = { SERVICE_QUESTIONS: "question" };
+
+// bot: the content to simulate (defaults to the saved content; the editor passes its draft)
+export default function WhatsAppSimulator({ org, db, bot = org.bot }) {
   const services = useMemo(() => {
     const real = org.services.filter((s) => s.is_active).map((s) => ({ ...s, price: Number(s.price) }));
     return real.length ? real : EXAMPLE_SERVICES.map((s, i) => ({ ...s, id: `demo-${i}` }));
@@ -77,16 +84,25 @@ export default function WhatsAppSimulator({ org, db }) {
   const demo = services[0]?.id.startsWith("demo-");
 
   const ctx = useMemo(() => ({
-    orgName: org.name,
-    services,
-    getSlots: async (service, answers) => {
-      if (!service.id.startsWith("demo-") && org.booking.enabled) {
-        const { data, error } = await db.rpc("get_booking_slots", { _slug: org.slug, _service: service.id, _answers: answers, _days: 14 });
-        if (!error) return data.map((s) => ({ start: s.slot_start, end: s.slot_end }));
-      }
-      return demoSlots(org.rules, quote(service, answers).minutes);
+    texts: botTexts(bot.scripts),
+    menu: bot.menu.filter((m) => m.is_active),
+    faqs: bot.faqs.filter((f) => f.is_active),
+    handoffKeywords: bot.settings?.handoff_keywords ?? [],
+    restartKeywords: bot.settings?.restart_keywords ?? [],
+    flow: {
+      orgName: org.name,
+      customerName: "דנה",
+      texts: botTexts(bot.scripts),
+      services,
+      getSlots: async (service, answers) => {
+        if (!service.id.startsWith("demo-") && org.booking.enabled) {
+          const { data, error } = await db.rpc("get_booking_slots", { _slug: org.slug, _service: service.id, _answers: answers, _days: 14 });
+          if (!error) return data.map((s) => ({ start: s.slot_start, end: s.slot_end }));
+        }
+        return demoSlots(org.rules, quote(service, answers).minutes);
+      },
     },
-  }), [org.name, org.slug, org.booking.enabled, org.rules, services, db]);
+  }), [org.name, org.slug, org.booking.enabled, org.rules, services, db, bot]);
 
   const [msgs, setMsgs] = useState([]);
   const [state, setState] = useState(null);
@@ -97,7 +113,7 @@ export default function WhatsAppSimulator({ org, db }) {
   const timers = useRef([]);
 
   const play = (turn) => {
-    setState(turn.state);
+    setState({ state: turn.state, mode: turn.mode, context: turn.context });
     if (turn.events.length) setLog((l) => [...turn.events.map((e) => ({ ...e, at: nowLabel() })), ...l].slice(0, 8));
     turn.messages.forEach((m, i) => {
       timers.current.push(setTimeout(() => setTyping(true), i * 900));
@@ -113,11 +129,11 @@ export default function WhatsAppSimulator({ org, db }) {
     timers.current = [];
     setMsgs([]);
     setLog([]);
-    play(greeting(ctx));
+    play(startConversation(ctx));
   };
 
   useEffect(() => {
-    const t = setTimeout(() => play(greeting(ctx)), 300);
+    const t = setTimeout(() => play(startConversation(ctx)), 300);
     const all = timers.current;
     return () => { clearTimeout(t); all.forEach(clearTimeout); };
   }, [ctx]);
@@ -128,12 +144,16 @@ export default function WhatsAppSimulator({ org, db }) {
     if (!state || typing) return;
     setMsgs((all) => [...all, { from: "me", text: label, time: nowLabel(), id: `me-${Date.now()}` }]);
     setTyping(true);
-    const turn = await botTurn(state, input, ctx);
+    const turn = await engineTurn(state, input, ctx);
+    if (!turn.messages.length) setTyping(false);
     play(turn);
   };
   const submit = (e) => { e.preventDefault(); const t = text.trim(); if (!t) return; setText(""); send({ text: t }, t); };
 
-  const activeStep = state ? BOT_STEPS.findIndex((s) => s.steps.includes(state.step)) : 0;
+  const stepId = state ? QUESTION_STEP[state.state] ?? STEP_OF[state.state] : "greeting";
+  const activeStep = BOT_STEPS.findIndex((s) => s.id === stepId);
+  const done = state?.state === "CONFIRMED";
+  const manual = state?.mode === "manual_agent";
   const lastBot = msgs.map((m) => m.from).lastIndexOf("bot");
 
   return (
@@ -186,20 +206,21 @@ export default function WhatsAppSimulator({ org, db }) {
           <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-sm font-semibold text-violet-700"><FlaskConical size={15} />מצב סימולציה</span>
           {demo && <span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700">משתמש בשירותי דוגמה כי עוד לא הוגדרו שירותים</span>}
           {!demo && org.booking.enabled && <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">שעות פנויות אמיתיות מהיומן</span>}
+          {manual && <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700"><Headset size={15} />הועבר לנציג, הבוט מושתק</span>}
           <button onClick={restart} className="ms-auto inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:text-rose-600 active:scale-95"><RotateCcw size={15} />שיחה חדשה</button>
         </div>
 
         <ol className="flex flex-col gap-2">
           {BOT_STEPS.map((s, i) => {
-            const done = i < activeStep || state?.step === "done";
-            const active = i === activeStep && state?.step !== "done";
+            const isDone = i < activeStep || done;
+            const active = i === activeStep && !done;
             return (
               <li key={s.id} className="flex items-center gap-3">
-                <span className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-all duration-500 ${done ? "bg-gradient-to-br from-emerald-400 to-teal-500 text-white" : active ? "scale-110 bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/30" : "bg-slate-100 text-slate-400"}`}>
-                  {done ? "✓" : i + 1}
+                <span className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-all duration-500 ${isDone ? "bg-gradient-to-br from-emerald-400 to-teal-500 text-white" : active ? "scale-110 bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/30" : "bg-slate-100 text-slate-400"}`}>
+                  {isDone ? "✓" : i + 1}
                   {active && <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-rose-400/40" />}
                 </span>
-                <span className={`text-[15px] font-semibold transition ${active ? "text-rose-600" : done ? "text-slate-700" : "text-slate-400"}`}>{s.label}</span>
+                <span className={`text-[15px] font-semibold transition ${active ? "text-rose-600" : isDone ? "text-slate-700" : "text-slate-400"}`}>{s.label}</span>
               </li>
             );
           })}
@@ -210,7 +231,7 @@ export default function WhatsAppSimulator({ org, db }) {
           {log.length === 0 && <p className="mt-2 text-sm text-slate-400">בחרו שירות בשיחה, והפעולות שהבוט מבצע יופיעו כאן.</p>}
           <ul className="mt-2 flex flex-col gap-1.5">
             {log.map((e, i) => {
-              const Icon = { slots: Search, booked: CalendarCheck, simulated: Sparkles, reminder: BellRing }[e.kind];
+              const Icon = { slots: Search, booked: CalendarCheck, simulated: Sparkles, reminder: BellRing, faq: HelpCircle, handoff: Headset }[e.kind] ?? Sparkles;
               return (
                 <li key={`${e.at}-${i}`} className="flex animate-pop-in items-start gap-2 text-sm text-slate-600">
                   <Icon size={15} className="mt-0.5 shrink-0 text-violet-500" />
@@ -222,8 +243,7 @@ export default function WhatsAppSimulator({ org, db }) {
           </ul>
         </div>
         <p className="text-sm leading-relaxed text-slate-500">
-          הבוט משתמש באותם שירותים, שאלות ושעות פנויות של דף ההזמנה. אפשר ללחוץ על הכפתורים או להקליד חופשי (למשל ״3״ או ״התחלה״).
-          כדי שהבוט יענה ללקוחות אמיתיים צריך לחבר מספר WhatsApp Business דרך ספק מאושר.
+          הבוט משתמש בתפריט, בשאלות הנפוצות ובנוסחים מ״תוכן הבוט״, ובאותם שירותים ושעות פנויות של דף ההזמנה. אפשר ללחוץ על הכפתורים או להקליד חופשי (למשל ״3״, ״כמה זה עולה?״, ״נציג״ או ״תפריט״).
         </p>
       </div>
     </div>

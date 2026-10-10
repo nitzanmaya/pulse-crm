@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Zap, MessageCircle, Mail, CalendarCheck, BellRing, Check, Plus, Clock, Bot, Server, Braces, Inbox, CircleAlert, CheckCheck } from "lucide-react";
+import { Zap, MessageCircle, Mail, CalendarCheck, BellRing, Check, Plus, Clock, Server, Braces, Inbox, CircleAlert, CheckCheck } from "lucide-react";
 import { Card, Btn, Field, inputCls, SectionTitle } from "@/components/ui";
 import { JobChip } from "@/components/booking/CalendarPage";
-import WhatsAppSimulator from "@/components/booking/WhatsAppSimulator";
 import { DEFAULT_TEMPLATES, TEMPLATE_VARS, renderTemplate, fmtTime, fmtDate } from "@/lib/booking/shared";
 
 const META = {
@@ -148,7 +147,6 @@ export default function AutomationsPage({ org, db, isAdmin, notify, fail, patchO
   const list = ORDER.map((k) => org.automations.find((a) => a.key === k)).filter(Boolean);
   const missing = ORDER.filter((k) => !org.automations.some((a) => a.key === k));
   const apptById = Object.fromEntries(org.appointments.map((a) => [a.id, a]));
-  const [tab, setTab] = useState("rules");
 
   const addMissing = async (key) => {
     const meta = META[key];
@@ -165,25 +163,7 @@ export default function AutomationsPage({ org, db, isAdmin, notify, fail, patchO
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex gap-1 self-start rounded-2xl bg-white p-1.5 shadow-sm ring-1 ring-slate-200/80" role="tablist">
-        {[{ id: "rules", label: "אוטומציות", icon: Zap }, { id: "bot", label: "סימולטור בוט WhatsApp", icon: Bot }].map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-            className={`flex h-10 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold transition duration-200 ${tab === t.id ? "bg-gradient-to-l from-rose-500 to-pink-500 text-white shadow-md shadow-rose-500/25" : "text-slate-600 hover:bg-rose-50 hover:text-rose-700"}`}>
-            <t.icon size={17} />{t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "bot" && (
-        <Card className="animate-fade-up p-5 sm:p-6">
-          <SectionTitle icon={Bot} color="text-emerald-500">סימולטור בוט WhatsApp</SectionTitle>
-          <p className="mb-5 mt-1 text-sm text-slate-500">כך ייראה הבוט אצל הלקוח: ברכה, בחירת שירות, שאלות כמות, שעה פנויה, כתובת ואישור ביומן.</p>
-          <WhatsAppSimulator org={org} db={db} />
-        </Card>
-      )}
-
-      {tab === "rules" && (
-        <>
+      <>
           <FlowDiagram automations={org.automations} />
 
           <Card className="flex animate-fade-up flex-wrap items-center gap-3 p-4" style={{ animationDelay: "60ms" }}>
@@ -225,8 +205,7 @@ export default function AutomationsPage({ org, db, isAdmin, notify, fail, patchO
               })}
             </ul>
           </Card>
-        </>
-      )}
+      </>
     </div>
   );
 }

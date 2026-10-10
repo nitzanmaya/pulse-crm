@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import type { BookingResult, Database } from "@/lib/database.types"
 import { env } from "@/lib/env"
 import { dispatchNotifications } from "@/lib/notify/dispatch"
+import { syncPendingAppointments } from "@/lib/calendar/google"
 
 type Body = {
   slug?: string
@@ -54,6 +55,11 @@ export async function POST(request: NextRequest) {
     delivered = (await dispatchNotifications({ appointmentId: booking.id })).delivered
   } catch (e) {
     console.error("instant confirmation failed; the cron will retry", e)
+  }
+  try {
+    await syncPendingAppointments({ appointmentId: booking.id })
+  } catch (e) {
+    console.error("Google Calendar event failed; the daily job retries", e)
   }
   // The page tells the customer only about messages that really went out
   const sent = { whatsapp: delivered.includes("whatsapp"), email: delivered.includes("email") }
