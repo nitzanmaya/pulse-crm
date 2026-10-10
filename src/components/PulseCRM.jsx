@@ -857,7 +857,7 @@ const TITLES = {
   dashboard: ["דשבורד", "תמונת מצב של הארגון"],
   kanban: ["קנבאן לידים", "גררו כרטיסיות בין השלבים לעדכון סטטוס"],
   calendar: ["יומן ותורים", "שירותים, שעות זמינות, דף הזמנה ציבורי ויומן שבועי"],
-  bot: ["בוט WhatsApp", "שיחות חיות, תוכן הבוט, הגדרות יומן וחיבור למספר העסקי"],
+  bot: ["בוט WhatsApp", "בוט שעונה ללקוחות וקובע תורים ב-WhatsApp העסקי"],
   automations: ["אוטומציות", "אישורים ותזכורות אוטומטיים ללקוחות"],
   analytics: ["אנליטיקה", "מגמות הכנסה, מקורות וביצועי צוות"],
   team: ["ניהול צוות והרשאות", "הזמנת משתמשים והגדרת תפקידי Admin / Agent / Viewer"],
@@ -907,7 +907,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
   const [toast, setToast] = useState(null);
   const [hearts, setHearts] = useState(0);
   const toastTimer = useRef(null);
-  const [botTab, setBotTab] = useState(null);
+  const [calendarTab, setCalendarTab] = useState(null);
 
   // Restore the last active org after hydration
   useEffect(() => {
@@ -943,7 +943,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
     if (!result) return;
     window.history.replaceState(null, "", window.location.pathname);
     const msg = { connected: ["יומן Google חובר! התורים הקרובים מסונכרנים אליו", "win"], denied: ["החיבור ל-Google בוטל", "error"], forbidden: ["רק מנהלי הארגון יכולים לחבר יומן", "error"], not_configured: ["חיבור Google עוד לא הוגדר בשרת", "error"], failed: ["החיבור ל-Google נכשל, נסו שוב", "error"] }[result];
-    if (msg) { setPage("bot"); setBotTab("calendar"); notify(...msg); } // eslint-disable-line react-hooks/set-state-in-effect
+    if (msg) { setPage("calendar"); setCalendarTab("page"); notify(...msg); } // eslint-disable-line react-hooks/set-state-in-effect
   }, []);
 
   const switchOrg = (id) => { setOrgId(id); writeLastOrg(id); setNavOpen(false); notify("הוחלף ארגון פעיל"); };
@@ -1149,8 +1149,8 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
             <div key={`${org.id}-${page}`} className="animate-fade-up">
             {page === "dashboard" && <Dashboard org={org} onOpen={setLead} go={setPage} onAdd={canEdit ? newLead : null} />}
             {page === "kanban" && <Kanban org={org} onMove={moveLead} onOpen={setLead} onAdd={newLead} query={query} canEdit={canEdit} />}
-            {page === "calendar" && <CalendarPage key={org.id} {...moduleProps} />}
-            {page === "bot" && <BotAdminPage key={`${org.id}-${botTab}`} {...moduleProps} initialTab={botTab} />}
+            {page === "calendar" && <CalendarPage key={`${org.id}-${calendarTab}`} {...moduleProps} initialTab={calendarTab} />}
+            {page === "bot" && <BotAdminPage key={org.id} {...moduleProps} />}
             {page === "automations" && <AutomationsPage key={org.id} {...moduleProps} />}
             {page === "analytics" && <Analytics org={org} />}
             {page === "team" && <Team org={org} onInvite={invite} onRole={changeRole} onRemove={removeMember} notify={notify} canManage={isAdmin} meId={userId} />}

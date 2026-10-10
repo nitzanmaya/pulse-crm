@@ -906,7 +906,7 @@ export function GoogleCalendarCard({ org, db, isAdmin, notify, fail, patchOrg, p
 
 export default function CalendarPage(props) {
   const { org, canEdit } = props;
-  const [tab, setTab] = useState("week");
+  const [tab, setTab] = useState(props.initialTab ?? "week");
   const [appt, setAppt] = useState(null);
   return (
     <div className="flex flex-col gap-5">

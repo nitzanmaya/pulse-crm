@@ -44,4 +44,4 @@ npm run dev
 - באישור התור: `book_appointment` יוצר או מקשר ליד ויוצר את התור, האירוע נכתב ל-Google Calendar, והלקוח מקבל אישור בוואטסאפ עם הפרטים.
 - `src/lib/calendar/google.ts` – `getAvailableSlots` (זמינות מה-CRM פחות שעות תפוסות ב-Google) ו-`createCalendarEvent`, וגם `syncPendingAppointments` לתורים שנוצרו בדף, ידנית או בבוט. חיבור OAuth: `/api/calendar/google/connect` ו-`/callback`.
 - `/api/whatsapp/send` – תשובת נציג מהשיחות החיות. שליחה מעבירה את השיחה ל-Manual Agent, והבוט מושתק לאיש הקשר הזה עד שמחזירים אותו לבוט.
-- בדשבורד: ״בוט WhatsApp״ ← שיחות חיות, תוכן הבוט, הגדרות יומן, חיבור WhatsApp, סימולטור.
+- בדשבורד: ״בוט WhatsApp״ ← הפעלה וחיבור, תוכן הבוט, סימולטור, ושיחות חיות אחרי החיבור. חיבור Google Calendar נמצא ב״יומן ותורים״ ← ״דף הזמנה וסנכרון״.
