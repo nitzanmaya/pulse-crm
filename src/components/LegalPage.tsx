@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Heart } from "lucide-react"
 
-export const LEGAL_CONTACT = "crm@nitzanet.co.il"
+export const LEGAL_CONTACT = "crm.nitzanet@gmail.com"
 export const LEGAL_UPDATED = "11.10.2026"
 
 // Shared frame for the public privacy policy and terms pages.
