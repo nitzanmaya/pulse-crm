@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, Avatar, ICON_NUDGE, Btn, Field, inputCls, RoleBadge, SectionTitle, Modal, Toggle } from "@/components/ui";
@@ -252,9 +252,10 @@ function ReminderBadges({ lead }) {
 function LeadCard({ lead, owner, onOpen, onDragStart, dragging, draggable = true }) {
   const stage = STAGES.find((s) => s.id === lead.stage);
   return (
-    <div draggable={draggable} onDragStart={(e) => onDragStart(e, lead.id)} onClick={() => onOpen(lead)}
+    <div draggable={draggable} onDragStart={(e) => onDragStart(e, lead.id)} onClick={() => onOpen(lead)} data-lead-id={lead.id}
+      onContextMenu={(e) => e.preventDefault()}
       onKeyDown={(e) => e.key === "Enter" && onOpen(lead)} tabIndex={0} role="button" aria-label={`ליד: ${lead.name}`}
-      className={`group animate-pop-in cursor-grab rounded-xl border border-s-4 border-slate-200 ${stage.edge} bg-white p-3.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-200 active:scale-[0.98] active:cursor-grabbing ${dragging ? "rotate-2 opacity-50" : ""}`}>
+      className={`group animate-pop-in cursor-grab select-none rounded-xl [-webkit-touch-callout:none] border border-s-4 border-slate-200 ${stage.edge} bg-white p-3.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-200 active:scale-[0.98] active:cursor-grabbing ${dragging ? "rotate-2 opacity-50" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-[15px] font-semibold leading-snug text-slate-900">{lead.name}</h4>
         <GripVertical size={16} className="mt-0.5 shrink-0 text-slate-300 opacity-0 transition group-hover:opacity-100" />
@@ -277,12 +278,100 @@ function LeadCard({ lead, owner, onOpen, onDragStart, dragging, draggable = true
   );
 }
 
+// Touch screens use the long-press drag below; native HTML drag stays for mouse
+const coarseQuery = "(pointer: coarse)";
+const subscribeCoarse = (cb) => { const m = window.matchMedia(coarseQuery); m.addEventListener("change", cb); return () => m.removeEventListener("change", cb); };
+const useCoarsePointer = () => useSyncExternalStore(subscribeCoarse, () => window.matchMedia(coarseQuery).matches, () => false);
+
 function Kanban({ org, onMove, onOpen, onAdd, query, canEdit }) {
+  const coarse = useCoarsePointer();
   const [dragId, setDragId] = useState(null);
   const [over, setOver] = useState(null);
   const memberById = (id) => org.members.find((m) => m.id === id);
   const leads = org.leads.filter((l) => !query || `${l.name} ${l.contact} ${l.tags.join(" ")}`.includes(query));
   const start = (e, id) => { setDragId(id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); };
+
+  // Touch drag: phones don't fire HTML drag events, so a long press on a card
+  // picks it up and the finger carries it to another column. A quick swipe
+  // still scrolls the board.
+  const boardRef = useRef(null);
+  const [ghost, setGhost] = useState(null);
+  const live = useRef({});
+  useEffect(() => { live.current = { onMove, canEdit, leads: org.leads }; });
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    let t = null, timer = null, overStage = null, suppressClick = false, scrollRaf = null;
+    const scroller = board.parentElement;
+    const reset = () => {
+      clearTimeout(timer); cancelAnimationFrame(scrollRaf);
+      t = null; overStage = null;
+      setGhost(null); setDragId(null); setOver(null);
+    };
+    const autoScroll = () => {
+      if (!t?.active) return;
+      const r = scroller.getBoundingClientRect();
+      const edge = 48;
+      if (t.x < r.left + edge) scroller.scrollLeft -= 12;
+      else if (t.x > r.right - edge) scroller.scrollLeft += 12;
+      scrollRaf = requestAnimationFrame(autoScroll);
+    };
+    const onStart = (e) => {
+      if (!live.current.canEdit || e.touches.length !== 1) return;
+      const card = e.target.closest("[data-lead-id]");
+      if (!card) return;
+      const { clientX: x, clientY: y } = e.touches[0];
+      t = { id: card.dataset.leadId, x0: x, y0: y, x, y, active: false };
+      timer = setTimeout(() => {
+        if (!t) return;
+        t.active = true;
+        const lead = live.current.leads.find((l) => l.id === t.id);
+        setDragId(t.id);
+        setGhost({ name: lead?.name ?? "", value: lead?.value ?? 0, x: t.x, y: t.y });
+        navigator.vibrate?.(25);
+        scrollRaf = requestAnimationFrame(autoScroll);
+      }, 280);
+    };
+    const onMoveTouch = (e) => {
+      if (!t) return;
+      const { clientX: x, clientY: y } = e.touches[0];
+      t.x = x; t.y = y;
+      if (!t.active) {
+        // Moved before the long press finished: it's a scroll, not a drag
+        if (Math.hypot(x - t.x0, y - t.y0) > 10) { clearTimeout(timer); t = null; }
+        return;
+      }
+      e.preventDefault();
+      setGhost((g) => (g ? { ...g, x, y } : g));
+      const col = document.elementFromPoint(x, y)?.closest("[data-stage]");
+      overStage = col?.dataset.stage ?? null;
+      setOver(overStage);
+    };
+    const onEnd = () => {
+      if (!t) return;
+      clearTimeout(timer);
+      if (t.active) {
+        suppressClick = true;
+        if (overStage) live.current.onMove(t.id, overStage);
+      }
+      reset();
+    };
+    // The tap that ends a drag must not also open the lead
+    const onClickCapture = (e) => { if (suppressClick) { suppressClick = false; e.stopPropagation(); e.preventDefault(); } };
+    board.addEventListener("touchstart", onStart, { passive: true });
+    board.addEventListener("touchmove", onMoveTouch, { passive: false });
+    board.addEventListener("touchend", onEnd);
+    board.addEventListener("touchcancel", reset);
+    board.addEventListener("click", onClickCapture, true);
+    return () => {
+      clearTimeout(timer); cancelAnimationFrame(scrollRaf);
+      board.removeEventListener("touchstart", onStart);
+      board.removeEventListener("touchmove", onMoveTouch);
+      board.removeEventListener("touchend", onEnd);
+      board.removeEventListener("touchcancel", reset);
+      board.removeEventListener("click", onClickCapture, true);
+    };
+  }, []);
   return (
     <div className="flex flex-col gap-4">
     {org.leads.length === 0 && canEdit && (
@@ -296,12 +385,12 @@ function Kanban({ org, onMove, onOpen, onAdd, query, canEdit }) {
       </Card>
     )}
     <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-      <div className="grid min-w-[1080px] grid-cols-5 gap-3">
+      <div ref={boardRef} className="grid min-w-[1080px] grid-cols-5 gap-3">
         {STAGES.map((s) => {
           const items = leads.filter((l) => l.stage === s.id);
           const total = items.reduce((a, l) => a + l.value, 0);
           return (
-            <section key={s.id} aria-label={s.label}
+            <section key={s.id} aria-label={s.label} data-stage={s.id}
               onDragOver={(e) => { e.preventDefault(); setOver(s.id); }}
               onDragLeave={() => setOver((o) => (o === s.id ? null : o))}
               onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain") || dragId; if (id) onMove(id, s.id); setDragId(null); setOver(null); }}
@@ -315,8 +404,8 @@ function Kanban({ org, onMove, onOpen, onAdd, query, canEdit }) {
                 <div className="mt-0.5 ps-[18px] text-sm font-semibold text-slate-500 tabular-nums">{ils(total)}</div>
               </header>
               <div className="flex flex-1 flex-col gap-2.5 px-2.5 pb-2.5" onDragEnd={() => { setDragId(null); setOver(null); }}>
-                {items.map((l) => <LeadCard key={l.id} lead={l} owner={memberById(l.owner)} onOpen={onOpen} onDragStart={start} dragging={dragId === l.id} draggable={canEdit} />)}
-                {items.length === 0 && <div className="flex flex-1 items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-10 text-sm text-slate-400">גררו ליד לכאן</div>}
+                {items.map((l) => <LeadCard key={l.id} lead={l} owner={memberById(l.owner)} onOpen={onOpen} onDragStart={start} dragging={dragId === l.id} draggable={canEdit && !coarse} />)}
+                {items.length === 0 && <div className="flex flex-1 items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-10 text-center text-sm text-slate-400">גררו ליד לכאן<br />(בטלפון: לחיצה ארוכה וגרירה)</div>}
                 {s.id === "new" && canEdit && (
                   <button onClick={onAdd} className={`group flex h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-rose-200 bg-white/60 text-sm font-semibold text-rose-500 transition hover:border-rose-300 hover:bg-white hover:text-rose-600 ${ICON_NUDGE}`}>
                     <Plus size={17} /> ליד חדש
@@ -328,6 +417,13 @@ function Kanban({ org, onMove, onOpen, onAdd, query, canEdit }) {
         })}
       </div>
     </div>
+    {ghost && (
+      <div aria-hidden className="pointer-events-none fixed z-50 w-56 -translate-x-1/2 -translate-y-1/2 rotate-2 rounded-xl border border-rose-200 bg-white p-3 shadow-2xl shadow-rose-500/20"
+        style={{ left: ghost.x, top: ghost.y }}>
+        <p className="truncate text-[15px] font-semibold text-slate-900">{ghost.name}</p>
+        <p className="mt-1 text-sm font-bold tabular-nums text-slate-600">{ils(ghost.value)}</p>
+      </div>
+    )}
     </div>
   );
 }
@@ -363,7 +459,7 @@ function LeadModal({ lead, org, onClose, onSave, onDelete, canEdit, canDelete })
         </div>
       )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="שם העסק"><input id="lead-name" className={inputCls} value={draft.name} onChange={set("name")} placeholder="לדוגמה: קפה ארומה" /></Field>
+        <Field label="שם הלקוח"><input id="lead-name" className={inputCls} value={draft.name} onChange={set("name")} placeholder="לדוגמה: דנה כהן" /></Field>
         <Field label="איש קשר"><input id="lead-contact" className={inputCls} value={draft.contact} onChange={set("contact")} /></Field>
         <Field label="טלפון"><input id="lead-phone" dir="ltr" className={inputCls} value={draft.phone} onChange={set("phone")} /></Field>
         <Field label="אימייל"><input id="lead-email" dir="ltr" className={inputCls} value={draft.email} onChange={set("email")} /></Field>
