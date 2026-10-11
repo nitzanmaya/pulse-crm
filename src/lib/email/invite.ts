@@ -23,6 +23,7 @@ export async function sendInviteEmail({ to, orgName, inviterName, role, token }:
 
   return resend.emails.send({
     from: env.emailFrom(),
+    replyTo: env.emailReplyTo(),
     to,
     subject: `${inviterName} הזמין/ה אותך להצטרף ל-${orgName} ב-Pulse CRM`,
     html: `<!doctype html>

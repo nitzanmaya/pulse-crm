@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   if (!due?.length) return NextResponse.json({ sent: 0 })
 
   const resend = new Resend(env.resendKey())
-  const emails = due.map((r) => ({ from: env.emailFrom(), to: r.email, ...reminderEmail(r) }))
+  const emails = due.map((r) => ({ from: env.emailFrom(), replyTo: env.emailReplyTo(), to: r.email, ...reminderEmail(r) }))
   let sent = 0
   // Resend batch accepts up to 100 emails per call
   for (let i = 0; i < emails.length; i += 100) {

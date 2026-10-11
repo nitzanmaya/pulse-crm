@@ -59,6 +59,7 @@ async function sendOne(job: NotificationJobClaim, wa: ReturnType<typeof whatsapp
     const when = `${fmtDate(job.starts_at)} · ${fmtTime(job.starts_at)}`
     const { data, error } = await resend.emails.send({
       from: env.emailFrom(),
+      replyTo: env.emailReplyTo(),
       to: job.email,
       subject,
       text,

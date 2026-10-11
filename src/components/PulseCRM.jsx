@@ -783,7 +783,7 @@ function OrgSettings({ org, onSave, canManage }) {
       </Card>
       <Card className="animate-fade-up p-6" style={{ animationDelay: "60ms" }}>
         <SectionTitle icon={BellRing} color="text-sky-500">הודעות אוטומטיות ללקוחות</SectionTitle>
-        <p className="mt-1 text-sm text-slate-500">נשלחות כל בוקר מ-crm@nitzanet.co.il בשם הארגון, ללקוחות שיש להם כתובת מייל.</p>
+        <p className="mt-1 text-sm text-slate-500">נשלחות כל בוקר בשם הארגון, ללקוחות שיש להם כתובת מייל. תשובות של לקוחות מגיעות ל-crm.nitzanet@gmail.com.</p>
         <div className="mt-4 flex flex-col gap-3">
           <Toggle checked={d.autoBirthday} disabled={!canManage} onChange={(v) => setD({ ...d, autoBirthday: v })}
             icon={Cake} title="ברכת יום הולדת" text="מייל ברכה חגיגי ביום ההולדת של הלקוח" />
