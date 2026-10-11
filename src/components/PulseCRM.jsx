@@ -459,7 +459,7 @@ function LeadModal({ lead, org, onClose, onSave, onDelete, canEdit, canDelete })
         </div>
       )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="שם העסק"><input id="lead-name" className={inputCls} value={draft.name} onChange={set("name")} placeholder="לדוגמה: קפה ארומה" /></Field>
+        <Field label="שם הלקוח"><input id="lead-name" className={inputCls} value={draft.name} onChange={set("name")} placeholder="לדוגמה: דנה כהן" /></Field>
         <Field label="איש קשר"><input id="lead-contact" className={inputCls} value={draft.contact} onChange={set("contact")} /></Field>
         <Field label="טלפון"><input id="lead-phone" dir="ltr" className={inputCls} value={draft.phone} onChange={set("phone")} /></Field>
         <Field label="אימייל"><input id="lead-email" dir="ltr" className={inputCls} value={draft.email} onChange={set("email")} /></Field>
