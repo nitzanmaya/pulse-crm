@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { Heart } from "lucide-react"
 
 // Shared frame for the login, onboarding and invite screens.
@@ -14,7 +15,11 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           <span className="text-2xl font-bold tracking-tight text-slate-900">Pulse CRM</span>
         </div>
         <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-8 shadow-2xl shadow-slate-900/10 backdrop-blur">{children}</div>
-        <p className="mt-6 text-center text-sm text-slate-400">ניצנט · crm.nitzanet.co.il</p>
+        <p className="mt-6 text-center text-sm text-slate-400">
+          ניצנט · crm.nitzanet.co.il ·{" "}
+          <Link href="/privacy" className="hover:text-rose-600">מדיניות פרטיות</Link> ·{" "}
+          <Link href="/terms" className="hover:text-rose-600">תנאי שימוש</Link>
+        </p>
       </div>
     </main>
   )
