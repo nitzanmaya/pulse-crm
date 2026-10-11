@@ -776,7 +776,7 @@ function OrgSettings({ org, onSave, canManage }) {
         <SectionTitle icon={Building2}>פרטי הארגון</SectionTitle>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="שם הארגון"><input id="org-name" className={inputCls} value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} /></Field>
-          <Field label="דומיין"><input id="org-domain" dir="ltr" className={inputCls} value={d.domain} onChange={(e) => setD({ ...d, domain: e.target.value })} /></Field>
+          <Field label="אתר הארגון"><input id="org-domain" type="url" dir="ltr" placeholder="www.business.co.il" className={inputCls} value={d.domain} onChange={(e) => setD({ ...d, domain: e.target.value })} /></Field>
           <Field label="מזהה Tenant"><input id="org-id" dir="ltr" readOnly className={`${inputCls} bg-slate-50 text-slate-500`} value={org.id} /></Field>
           <Field label="מטבע ואזור זמן"><input id="org-locale" readOnly className={`${inputCls} bg-slate-50 text-slate-500`} value="₪ ILS · Asia/Jerusalem" /></Field>
           <div className="sm:col-span-2">
