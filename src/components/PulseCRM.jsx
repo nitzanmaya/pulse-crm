@@ -1160,7 +1160,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
 
           <footer className={`border-t border-slate-200/70 px-4 py-6 text-sm text-slate-500 sm:px-8 ${banner ? "pb-52 sm:pb-36" : ""}`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="flex items-center gap-1.5">© 2026 ניצנט בע״מ · נבנה עם <Heart size={14} className="animate-heartbeat fill-rose-500 text-rose-500" /> · Pulse CRM</p>
+              <p className="flex items-center gap-1.5">© 2026 ניצנט · נבנה עם <Heart size={14} className="animate-heartbeat fill-rose-500 text-rose-500" /> · Pulse CRM</p>
               <nav className="flex flex-wrap gap-x-4 gap-y-1" aria-label="קישורים משפטיים">
                 <a href="#terms" className="transition hover:text-rose-600">תנאי שימוש</a>
                 <a href="#privacy" className="transition hover:text-rose-600">מדיניות פרטיות</a>
