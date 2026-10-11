@@ -4,6 +4,7 @@ import { Resend } from "resend"
 import type { Database } from "@/lib/database.types"
 import { env } from "@/lib/env"
 import { reminderEmail } from "@/lib/email/reminders"
+import { replyToAddresses } from "@/lib/notify/reply-to"
 
 // Daily job (see vercel.json crons): birthday greetings and service reminders.
 // claim_due_reminders logs each item before returning it, so a re-run never double-sends.
@@ -22,7 +23,13 @@ export async function GET(request: NextRequest) {
   if (!due?.length) return NextResponse.json({ sent: 0 })
 
   const resend = new Resend(env.resendKey())
-  const emails = due.map((r) => ({ from: env.emailFrom(), to: r.email, ...reminderEmail(r) }))
+  const replyTo = await replyToAddresses(supabase, secret, { leadIds: due.map((r) => r.lead_id) })
+  const emails = due.map((r) => ({
+    from: env.emailFromAs(r.org_name),
+    replyTo: replyTo.get(r.lead_id) ?? env.emailReplyTo(),
+    to: r.email,
+    ...reminderEmail(r),
+  }))
   let sent = 0
   // Resend batch accepts up to 100 emails per call
   for (let i = 0; i < emails.length; i += 100) {

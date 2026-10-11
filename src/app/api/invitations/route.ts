@@ -36,6 +36,7 @@ export async function POST(request: Request) {
     to: email,
     orgName: org?.name ?? "הארגון",
     inviterName: profile?.full_name ?? (claims.claims.email as string) ?? "חבר צוות",
+    inviterEmail: claims.claims.email as string | undefined,
     role,
     token: invite.token,
   })

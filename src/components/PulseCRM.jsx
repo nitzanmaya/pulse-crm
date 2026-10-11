@@ -768,7 +768,8 @@ function Team({ org, onInvite, onRole, onRemove, notify, canManage, meId }) {
 /* ---------------------------------- settings ---------------------------------- */
 
 function OrgSettings({ org, onSave, canManage }) {
-  const [d, setD] = useState({ name: org.name, domain: org.domain, autoBirthday: org.autoBirthday, autoService: org.autoService });
+  const [d, setD] = useState({ name: org.name, domain: org.domain, replyEmail: org.replyEmail ?? "", autoBirthday: org.autoBirthday, autoService: org.autoService });
+  const replyEmailOk = !d.replyEmail.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.replyEmail.trim());
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-5">
       <Card className="animate-fade-up p-6">
@@ -778,19 +779,26 @@ function OrgSettings({ org, onSave, canManage }) {
           <Field label="דומיין"><input id="org-domain" dir="ltr" className={inputCls} value={d.domain} onChange={(e) => setD({ ...d, domain: e.target.value })} /></Field>
           <Field label="מזהה Tenant"><input id="org-id" dir="ltr" readOnly className={`${inputCls} bg-slate-50 text-slate-500`} value={org.id} /></Field>
           <Field label="מטבע ואזור זמן"><input id="org-locale" readOnly className={`${inputCls} bg-slate-50 text-slate-500`} value="₪ ILS · Asia/Jerusalem" /></Field>
+          <div className="sm:col-span-2">
+            <Field label="מייל לתשובות מלקוחות">
+              <input id="org-reply-email" type="email" dir="ltr" className={`${inputCls} ${replyEmailOk ? "" : "border-red-300 ring-4 ring-red-50"}`} value={d.replyEmail} readOnly={!canManage}
+                onChange={(e) => setD({ ...d, replyEmail: e.target.value })} placeholder="למשל: office@business.co.il" />
+            </Field>
+            <p className="mt-1.5 text-xs text-slate-500">כשלקוח עונה למייל אוטומטי, התשובה תגיע לכאן. אם ריק, היא תגיע למייל של מי שפתח את העסק.</p>
+          </div>
         </div>
-        {canManage && <div className="mt-6 flex justify-end"><Btn onClick={() => onSave(d)} disabled={!d.name.trim()}><Check size={17} />שמירה</Btn></div>}
+        {canManage && <div className="mt-6 flex justify-end"><Btn onClick={() => onSave(d)} disabled={!d.name.trim() || !replyEmailOk}><Check size={17} />שמירה</Btn></div>}
       </Card>
       <Card className="animate-fade-up p-6" style={{ animationDelay: "60ms" }}>
         <SectionTitle icon={BellRing} color="text-sky-500">הודעות אוטומטיות ללקוחות</SectionTitle>
-        <p className="mt-1 text-sm text-slate-500">נשלחות כל בוקר מ-crm@nitzanet.co.il בשם הארגון, ללקוחות שיש להם כתובת מייל.</p>
+        <p className="mt-1 text-sm text-slate-500">נשלחות כל בוקר בשם הארגון, ללקוחות שיש להם כתובת מייל. המייל מופיע בשם העסק, ותשובות של לקוחות מגיעות למייל שמוגדר למעלה ב״מייל לתשובות מלקוחות״.</p>
         <div className="mt-4 flex flex-col gap-3">
           <Toggle checked={d.autoBirthday} disabled={!canManage} onChange={(v) => setD({ ...d, autoBirthday: v })}
             icon={Cake} title="ברכת יום הולדת" text="מייל ברכה חגיגי ביום ההולדת של הלקוח" />
           <Toggle checked={d.autoService} disabled={!canManage} onChange={(v) => setD({ ...d, autoService: v })}
             icon={Wrench} title="תזכורת לשירות חוזר" text="מייל תזכורת שבוע לפני מועד השירות הבא (שנתי, חצי שנתי וכו׳)" />
         </div>
-        {canManage && <div className="mt-6 flex justify-end"><Btn onClick={() => onSave(d)} disabled={!d.name.trim()}><Check size={17} />שמירה</Btn></div>}
+        {canManage && <div className="mt-6 flex justify-end"><Btn onClick={() => onSave(d)} disabled={!d.name.trim() || !replyEmailOk}><Check size={17} />שמירה</Btn></div>}
       </Card>
       <Card className="flex animate-fade-up flex-wrap items-center justify-between gap-3 bg-gradient-to-l from-violet-50 to-rose-50 p-6" style={{ animationDelay: "80ms" }}>
         <div>
@@ -1030,7 +1038,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
       db.from("bot_menu_items").select("*").eq("org_id", data.id).order("position"),
     ]);
     const created = {
-      id: data.id, slug: data.slug, name: data.name, plan: data.plan, domain: "", color: "from-emerald-400 to-teal-500", autoBirthday: true, autoService: true, myRole: "Owner",
+      id: data.id, slug: data.slug, name: data.name, plan: data.plan, domain: "", color: "from-emerald-400 to-teal-500", autoBirthday: true, autoService: true, replyEmail: "", myRole: "Owner",
       members: [{ ...me, role: "Owner", color: 0 }], leads: [],
       booking: { enabled: data.booking_enabled, headline: "", slotMinutes: data.booking_slot_minutes, bufferMinutes: data.booking_buffer_minutes, minNoticeHours: data.booking_min_notice_hours, maxDays: data.booking_max_days },
       services: [], rules: rulesRes.data ?? [], blocks: [], appointments: [], automations: autoRes.data ?? [], jobs: [], calendars: [],
@@ -1042,7 +1050,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
   };
   const saveOrg = async (d) => {
     const { error } = await db.from("organizations")
-      .update({ name: d.name.trim(), domain: d.domain || null, auto_birthday_email: d.autoBirthday, auto_service_reminder: d.autoService })
+      .update({ name: d.name.trim(), domain: d.domain || null, reply_email: d.replyEmail.trim() || null, auto_birthday_email: d.autoBirthday, auto_service_reminder: d.autoService })
       .eq("id", org.id).select("id").single();
     if (error) return fail(error, "שמירת ההגדרות נכשלה");
     patchOrg((o) => ({ ...o, ...d }));

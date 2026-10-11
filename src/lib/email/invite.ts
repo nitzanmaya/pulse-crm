@@ -5,6 +5,7 @@ type InviteEmail = {
   to: string
   orgName: string
   inviterName: string
+  inviterEmail?: string
   role: "admin" | "agent" | "viewer"
   token: string
 }
@@ -15,7 +16,7 @@ function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
 }
 
-export async function sendInviteEmail({ to, orgName, inviterName, role, token }: InviteEmail) {
+export async function sendInviteEmail({ to, orgName, inviterName, inviterEmail, role, token }: InviteEmail) {
   const resend = new Resend(env.resendKey())
   const link = `${env.siteUrl()}/invite/${token}`
   const org = escapeHtml(orgName)
@@ -23,6 +24,7 @@ export async function sendInviteEmail({ to, orgName, inviterName, role, token }:
 
   return resend.emails.send({
     from: env.emailFrom(),
+    replyTo: inviterEmail || env.emailReplyTo(),
     to,
     subject: `${inviterName} הזמין/ה אותך להצטרף ל-${orgName} ב-Pulse CRM`,
     html: `<!doctype html>
