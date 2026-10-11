@@ -50,6 +50,7 @@ export type UiOrg = {
   color: string
   autoBirthday: boolean
   autoService: boolean
+  replyEmail: string
   myRole: UiRole
   members: UiMember[]
   leads: UiLead[]
@@ -187,6 +188,7 @@ export async function loadOrgs(supabase: SupabaseClient<Database>, userId: strin
       color: org.color ?? ORG_COLORS[i % ORG_COLORS.length],
       autoBirthday: org.auto_birthday_email,
       autoService: org.auto_service_reminder,
+      replyEmail: org.reply_email ?? "",
       myRole: mine ? uiRole(mine.role, org.created_by === userId) : "Viewer",
       members: [...members, ...pending],
       leads: leads.filter((l) => l.org_id === org.id).map(toUiLead),

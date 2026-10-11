@@ -17,6 +17,7 @@ type Organization = {
   color: string | null
   auto_birthday_email: boolean
   auto_service_reminder: boolean
+  reply_email: string | null
   booking_enabled: boolean
   booking_headline: string | null
   booking_slot_minutes: number
@@ -322,6 +323,10 @@ export type Database = {
       accept_invitation: { Args: { _token: string }; Returns: string }
       create_organization: { Args: { _name: string; _slug: string }; Returns: Organization }
       claim_due_reminders: { Args: { _secret: string }; Returns: DueReminder[] }
+      reply_to_addresses: {
+        Args: { _secret: string; _job_ids?: string[]; _lead_ids?: string[] }
+        Returns: { ref_id: string; reply_to: string | null }[]
+      }
       get_booking_page: { Args: { _slug: string }; Returns: Json }
       get_booking_slots: {
         Args: { _slug: string; _service: string; _answers?: Json; _from?: string | null; _days?: number }

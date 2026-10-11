@@ -4,6 +4,7 @@ import type { Database, NotificationJobClaim } from "@/lib/database.types"
 import { env } from "@/lib/env"
 import { DEFAULT_TEMPLATES, fmtDate, fmtTime, renderTemplate, templateVars } from "@/lib/booking/shared"
 import { bookingEmailHtml } from "@/lib/notify/booking-email"
+import { replyToAddresses } from "@/lib/notify/reply-to"
 import { whatsappProvider } from "@/lib/notify/whatsapp"
 
 type Result = { id: string; status: "sent" | "simulated" | "failed"; provider: string; provider_message_id?: string; error?: string; content?: string }
@@ -25,7 +26,8 @@ export async function dispatchNotifications({ appointmentId, lookaheadMinutes = 
 
   const wa = whatsappProvider()
   const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
-  const results = await Promise.all(jobs.map((job) => sendOne(job, wa, resend)))
+  const replyTo = await replyToAddresses(supabase, secret, { jobIds: jobs.map((j) => j.job_id) })
+  const results = await Promise.all(jobs.map((job) => sendOne(job, wa, resend, replyTo.get(job.job_id))))
 
   const { error: finishError } = await supabase.rpc("finish_notification_jobs", { _secret: secret, _results: results })
   if (finishError) console.error("finish_notification_jobs failed", finishError)
@@ -40,7 +42,7 @@ export async function dispatchNotifications({ appointmentId, lookaheadMinutes = 
   }
 }
 
-async function sendOne(job: NotificationJobClaim, wa: ReturnType<typeof whatsappProvider>, resend: Resend | null): Promise<Result> {
+async function sendOne(job: NotificationJobClaim, wa: ReturnType<typeof whatsappProvider>, resend: Resend | null, replyTo?: string): Promise<Result> {
   const vars = templateVars(job)
   const kind = job.kind
   try {
@@ -58,8 +60,8 @@ async function sendOne(job: NotificationJobClaim, wa: ReturnType<typeof whatsapp
     const subject = renderTemplate(job.subject || DEFAULT_TEMPLATES[`email_${kind}_subject`], vars)
     const when = `${fmtDate(job.starts_at)} · ${fmtTime(job.starts_at)}`
     const { data, error } = await resend.emails.send({
-      from: env.emailFrom(),
-      replyTo: env.emailReplyTo(),
+      from: env.emailFromAs(job.org_name),
+      replyTo: replyTo ?? env.emailReplyTo(),
       to: job.email,
       subject,
       text,
