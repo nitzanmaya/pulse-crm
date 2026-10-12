@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Heart, Sparkles, ListChecks, CalendarDays, User, Check, ArrowRight, ArrowLeft, Timer, Coins, MessageCircle, Mail,
-  MapPin, Phone, Sun, Sunset, Moon, CalendarPlus, RotateCcw, Loader2, CircleAlert, ChevronLeft, ChevronRight, Plus, Minus, ShoppingBag, Volume2, VolumeX,
+  MapPin, Phone, Sun, Sunset, Moon, CalendarPlus, RotateCcw, Loader2, CircleAlert, ChevronLeft, ChevronRight, Plus, Minus, ShoppingBag, Volume2, VolumeX, Trash2, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -26,7 +26,7 @@ const CONFETTI = Array.from({ length: 18 }, (_, i) => {
   return { dx: `${Math.round(Math.cos(a) * (90 + (i % 3) * 40))}px`, dy: `${Math.round(Math.sin(a) * (90 + (i % 3) * 40))}px`, r: `${(i % 2 ? 1 : -1) * (160 + i * 20)}deg`, c: ["bg-rose-500", "bg-amber-400", "bg-violet-500", "bg-sky-400", "bg-emerald-400", "bg-pink-400"][i % 6] };
 });
 
-function Stepper({ step }) {
+function Stepper({ step, onJump }) {
   return (
     <div className="px-1">
       <div className="relative h-2 overflow-hidden rounded-full bg-rose-100">
@@ -35,14 +35,33 @@ function Stepper({ step }) {
       <ol className="mt-3 grid grid-cols-5 gap-1">
         {STEPS.map((s, i) => (
           <li key={s.label} className="flex flex-col items-center gap-1 text-center">
-            <span className={`flex h-9 w-9 items-center justify-center rounded-full transition-all duration-500 ${i < step ? "bg-emerald-500 text-white" : i === step ? "scale-110 bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/30" : "bg-white text-slate-400 ring-1 ring-slate-200"}`}>
+            <button type="button" disabled={i >= step || !onJump} onClick={() => onJump(i)} aria-label={i < step ? `חזרה לשלב ${s.label}` : s.label}
+              className={`flex h-9 w-9 items-center justify-center rounded-full transition-all duration-500 ${i < step ? "cursor-pointer bg-emerald-500 text-white hover:scale-110 hover:bg-emerald-600" : i === step ? "scale-110 bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/30" : "bg-white text-slate-400 ring-1 ring-slate-200"}`}>
               {i < step ? <Check size={17} strokeWidth={3} /> : <s.icon size={17} />}
-            </span>
+            </button>
             <span className={`hidden text-xs font-semibold sm:block ${i === step ? "text-rose-600" : "text-slate-400"}`}>{s.label}</span>
           </li>
         ))}
       </ol>
     </div>
+  );
+}
+
+function BackBtn({ onClick, children = "חזרה" }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="inline-flex h-12 items-center gap-2 rounded-2xl border-2 border-slate-200 bg-white px-5 text-base font-bold text-slate-700 shadow-sm transition hover:border-rose-300 hover:text-rose-600 active:scale-95">
+      <ArrowRight size={19} />{children}
+    </button>
+  );
+}
+
+function TopBack({ onClick, children }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="mb-4 inline-flex h-10 items-center gap-1.5 rounded-full bg-slate-100 pe-4 ps-3 text-[15px] font-bold text-slate-700 transition hover:bg-rose-50 hover:text-rose-600 active:scale-95">
+      <ArrowRight size={18} />{children}
+    </button>
   );
 }
 
@@ -155,6 +174,7 @@ export default function BookingFlow({ org, services }) {
   const cartShown = group === "*" ? [...groups, null] : [group, null];
   const [cart, setCart] = useState({});
   const bagRef = useRef(null);
+  const [cartOpen, setCartOpen] = useState(false);
   const [bump, setBump] = useState(0);
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem("booking-muted") === "1"; } catch { return false; } });
   const toggleMute = () => { setMuted((m) => { try { localStorage.setItem("booking-muted", m ? "0" : "1"); } catch {} return !m; }); };
@@ -202,7 +222,36 @@ export default function BookingFlow({ org, services }) {
   const minPrice = Number(org.min_price) || 0;
   const missing = (price) => Math.max(0, minPrice - price);
   const belowMin = service ? missing(quote(service, answers).price) : 0;
-  const go = (n) => { setError(""); setStep(n); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  // Steps live in the browser history, so the phone's back button goes to
+  // the previous step instead of leaving the page
+  const go = (n) => {
+    setError(""); setStep(n); window.scrollTo({ top: 0, behavior: "smooth" });
+    try {
+      if (n > step && n < 4) window.history.pushState({ bookingStep: n, group }, "");
+      else window.history.replaceState({ bookingStep: n, group }, "");
+    } catch {}
+  };
+  const prevStep = step === 3 ? 2 : step === 2 ? (service?.questions?.length ? 1 : 0) : 0;
+  const goBack = () => {
+    try { if (window.history.state?.bookingStep === step && step > 0) { window.history.back(); return; } } catch {}
+    go(prevStep);
+  };
+  const chooseGroup = (g) => {
+    setGroup(g);
+    try { if (g !== null) window.history.pushState({ bookingStep: 0, group: g }, ""); else if (window.history.state?.group) window.history.back(); } catch {}
+  };
+  useEffect(() => {
+    const onPop = (e) => {
+      const st = e.state;
+      setStep((cur) => (cur === 4 ? cur : typeof st?.bookingStep === "number" ? st.bookingStep : 0));
+      setGroup(st?.group ?? null);
+      setCartOpen(false);
+      setError("");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // Free slots for the chosen service (duration depends on the answers)
   useEffect(() => {
@@ -315,7 +364,7 @@ export default function BookingFlow({ org, services }) {
           <p className="mt-1.5 max-w-md text-base text-slate-500">{org.headline || "קביעת תור אונליין, בכמה קליקים"}</p>
         </header>
 
-        {step < 4 && <div className="mb-6 animate-fade-up" style={{ animationDelay: "60ms" }}><Stepper step={step} /></div>}
+        {step < 4 && <div className="mb-6 animate-fade-up" style={{ animationDelay: "60ms" }}><Stepper step={step} onJump={(i) => (i === prevStep ? goBack() : go(i === 1 && !service?.questions?.length ? 0 : i))} /></div>}
 
         <section key={step} className="animate-pop-in rounded-[2rem] border border-slate-200/80 bg-white/90 p-5 shadow-2xl shadow-slate-900/10 backdrop-blur sm:p-8">
           {error && (
@@ -342,7 +391,7 @@ export default function BookingFlow({ org, services }) {
               )}
               <div className="mt-6 flex flex-col gap-3">
                 {[...groups.map((g) => ({ id: g, label: g })), { id: "*", label: comboLabel(groups) }].map((g, i) => (
-                  <button key={g.id} onClick={() => setGroup(g.id)} style={{ animationDelay: `${i * 70}ms` }}
+                  <button key={g.id} onClick={() => chooseGroup(g.id)} style={{ animationDelay: `${i * 70}ms` }}
                     className="group flex animate-fade-up items-center gap-4 rounded-3xl border-2 border-slate-100 bg-white p-5 text-start shadow-sm transition duration-300 hover:-translate-y-0.5 hover:border-rose-200 hover:shadow-xl active:scale-[0.98]">
                     <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${g.id === "*" ? "from-amber-400 to-rose-500" : i % 2 ? "from-violet-500 to-fuchsia-500" : "from-sky-500 to-blue-600"} text-white shadow-md transition group-hover:-rotate-6 group-hover:scale-110`}><Sparkles size={22} /></span>
                     <span className="flex-1 text-lg font-bold text-slate-900">{g.label}</span>
@@ -355,7 +404,7 @@ export default function BookingFlow({ org, services }) {
 
           {step === 0 && cartMode && (
             <>
-              <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{group === "*" ? comboLabel(groups) : group}</button>
+              <TopBack onClick={() => chooseGroup(null)}>כל הקטגוריות</TopBack>
               <h2 className="text-2xl font-bold text-slate-900">מה מנקים הפעם?</h2>
               <p className="mt-1 text-base text-slate-500">הוסיפו לסל כל מה שצריך לביקור אחד, בכל כמות.</p>
               {org.note && (
@@ -413,14 +462,18 @@ export default function BookingFlow({ org, services }) {
               })}
               <div className={`sticky z-10 mt-6 rounded-2xl bg-slate-900 p-4 text-white shadow-2xl transition ${org.whatsapp ? "bottom-24 sm:bottom-4" : "bottom-4"}`}>
                 <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setCartOpen(true)} disabled={!cartLines.length} aria-label="פתיחת סל השירותים"
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-start transition enabled:hover:opacity-90 enabled:active:scale-[0.98]">
                   <span ref={bagRef} key={bump} className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 ${bump ? "animate-wiggle" : ""}`}>
                     <ShoppingBag size={22} />
                     {cartLines.length > 0 && <span className="absolute -end-1.5 -top-1.5 flex h-5 min-w-5 animate-pop-in items-center justify-center rounded-full bg-rose-500 px-1 text-xs font-bold tabular-nums">{cartLines.reduce((t, l) => t + l.qty, 0)}</span>}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[15px] font-bold">סל השירותים</div>
+                    <div className="flex items-center gap-1.5 text-[15px] font-bold">סל השירותים{cartLines.length > 0 && <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold">לצפייה ועריכה</span>}</div>
                     <div className="text-sm text-white/70">{cartLines.length ? `${cartLines.reduce((t, l) => t + l.qty, 0)} פריטים · ${minutesLabel(cartTotal.minutes)}` : `לחצו + כדי להוסיף לסל${minPrice ? ` · מינימום ${ils(minPrice)}` : ""}`}</div>
                   </div>
+                  {cartLines.length > 0 && <ChevronLeft size={20} className="shrink-0 text-white/60" />}
+                  </button>
                   <button type="button" onClick={toggleMute} aria-label={muted ? "הפעלת צלילים" : "השתקת צלילים"} aria-pressed={!muted}
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white">
                     {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
@@ -428,7 +481,7 @@ export default function BookingFlow({ org, services }) {
                 </div>
                 {cartLines.length > 0 && (
                   <>
-                    <div className="mt-3 line-clamp-2 text-[15px] font-semibold">{cartTitle(cartLines)}</div>
+                    <button type="button" onClick={() => setCartOpen(true)} className="mt-3 line-clamp-2 w-full text-start text-[15px] font-semibold underline-offset-4 hover:underline">{cartTitle(cartLines)}</button>
                     {missing(cartTotal.price) > 0 && <MinNote min={minPrice} gap={missing(cartTotal.price)} dark />}
                     <button onClick={startCart} disabled={cartTotal.minutes > 16 * 60 || missing(cartTotal.price) > 0}
                       className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-rose-500 to-pink-500 text-base font-bold shadow-lg transition active:scale-[0.98] disabled:opacity-50">
@@ -442,7 +495,7 @@ export default function BookingFlow({ org, services }) {
 
           {step === 0 && (!grouped || (group && !cartMode)) && (
             <>
-              {grouped && <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{group === "*" ? comboLabel(groups) : group}</button>}
+              {grouped && <TopBack onClick={() => chooseGroup(null)}>כל הקטגוריות</TopBack>}
               <h2 className="text-2xl font-bold text-slate-900">איזה שירות תרצו להזמין?</h2>
               <p className="mt-1 text-base text-slate-500">בחרו שירות, ובשלב הבא נשאל כמה שאלות קצרות.</p>
               {org.note && (
@@ -513,7 +566,7 @@ export default function BookingFlow({ org, services }) {
                 {belowMin > 0 && <MinNote min={minPrice} gap={belowMin} />}
               </div>
               <div className="mt-7 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
-                <button onClick={() => go(0)} className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-500 transition hover:text-rose-600"><ArrowRight size={18} />חזרה</button>
+                <BackBtn onClick={goBack}>חזרה לבחירת שירות</BackBtn>
                 <NextBtn disabled={needsAnswers.length > 0 || belowMin > 0} onClick={() => go(2)}>לבחירת מועד</NextBtn>
               </div>
             </>
@@ -601,7 +654,7 @@ export default function BookingFlow({ org, services }) {
               </>)}
 
               <div className="mt-6 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
-                <button onClick={() => go(service.questions?.length ? 1 : 0)} className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-500 transition hover:text-rose-600"><ArrowRight size={18} />חזרה</button>
+                <BackBtn onClick={goBack}>{service.questions?.length ? "חזרה לפרטי השירות" : service.items ? "חזרה לסל" : "חזרה לבחירת שירות"}</BackBtn>
                 {!needsPlace && <NextBtn disabled={!slot || belowMin > 0} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${org.windowed ? "הגעה " : ""}${slotLabel({ ...slot, window: org.windowed })}` : org.windowed ? "בחרו טווח הגעה" : "בחרו שעה"}</NextBtn>}
               </div>
             </>
@@ -619,7 +672,7 @@ export default function BookingFlow({ org, services }) {
                   <div className="text-base font-bold text-slate-900">{service.name}</div>
                   <div className="text-sm text-slate-600">{fmtDay(localParts(slot.start).day)} · {org.windowed && "הגעה בין "}<bdi dir="ltr">{fmtTime(slot.start)}–{fmtTime(slot.end)}</bdi></div>
                 </div>
-                <button onClick={() => go(2)} className="text-sm font-semibold text-rose-600 hover:underline">שינוי</button>
+                <button onClick={goBack} className="text-sm font-semibold text-rose-600 hover:underline">שינוי</button>
               </div>
               <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5"><span className="text-[15px] font-semibold text-slate-700">שם מלא *</span>
@@ -635,7 +688,7 @@ export default function BookingFlow({ org, services }) {
               </div>
               <p className="mt-4 text-sm text-slate-400">הפרטים משמשים רק לתיאום התור ולשליחת אישור ותזכורת.</p>
               <div className="mt-6 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
-                <button onClick={() => go(2)} className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-500 transition hover:text-rose-600"><ArrowRight size={18} />חזרה</button>
+                <BackBtn onClick={goBack}>חזרה לבחירת מועד</BackBtn>
                 <NextBtn disabled={!formOk} busy={busy} onClick={submit}>אישור וקביעת התור</NextBtn>
               </div>
             </>
@@ -718,6 +771,56 @@ export default function BookingFlow({ org, services }) {
           מופעל על ידי Pulse CRM <Heart size={13} className="animate-heartbeat fill-rose-400 text-rose-400" />
         </p>
       </div>
+      {cartOpen && cartMode && step === 0 && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label="סל השירותים">
+          <button type="button" aria-label="סגירה" onClick={() => setCartOpen(false)} className="absolute inset-0 animate-fade-up bg-slate-900/50 backdrop-blur-sm" style={{ animationDuration: "200ms" }} />
+          <div dir="rtl" className="relative flex max-h-[88vh] w-full max-w-lg animate-fade-up flex-col rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-md"><ShoppingBag size={21} /></span>
+              <div className="min-w-0 flex-1">
+                <div className="text-lg font-bold text-slate-900">סל השירותים</div>
+                <div className="text-sm text-slate-500">{cartLines.reduce((t, l) => t + l.qty, 0)} פריטים · {minutesLabel(cartTotal.minutes)}</div>
+              </div>
+              <button type="button" onClick={() => setCartOpen(false)} aria-label="סגירת הסל" className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100"><X size={22} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              {cartLines.length === 0 && <p className="py-10 text-center text-base text-slate-500">הסל ריק. הוסיפו שירותים כדי להמשיך.</p>}
+              {cartLines.map(({ service: s, qty }) => (
+                <div key={s.id} className="flex items-center gap-3 border-b border-slate-100 py-3.5 last:border-0">
+                  <span className={`h-10 w-1.5 shrink-0 rounded-full bg-gradient-to-b ${serviceColor(s.color).grad}`} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[16px] font-bold text-slate-900">{s.name}</div>
+                    <div className="text-sm text-slate-500">{ils(s.price)} ליחידה{qty > 1 ? ` · סה״כ ${ils(s.price * qty)}` : ""}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 rounded-full bg-slate-50 p-1 ring-1 ring-slate-200">
+                    <button type="button" onClick={() => removeOne(s, qty)} aria-label={qty === 1 ? `הסרת ${s.name}` : "פחות"} className="flex h-9 w-9 items-center justify-center rounded-full text-rose-600 transition hover:bg-white active:scale-90">
+                      {qty === 1 ? <Trash2 size={17} /> : <Minus size={18} strokeWidth={2.75} />}
+                    </button>
+                    <span key={qty} className="w-6 animate-pop-in text-center text-lg font-bold tabular-nums text-slate-900">{qty}</span>
+                    <button type="button" onClick={() => { setQty(s.id, qty + 1); if (!muted) chime(true); }} disabled={qty >= 20} aria-label="עוד" className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600 active:scale-90 disabled:opacity-40"><Plus size={18} strokeWidth={2.75} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-slate-100 px-5 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-4">
+              <div className="mb-3 flex items-center justify-between text-base">
+                <span className="font-semibold text-slate-600">סה״כ משוער</span>
+                <span key={cartTotal.price} className="animate-pop-in text-xl font-bold tabular-nums text-slate-900">{ils(cartTotal.price)}</span>
+              </div>
+              {missing(cartTotal.price) > 0 && cartLines.length > 0 && <div className="-mt-1 mb-3"><MinNote min={minPrice} gap={missing(cartTotal.price)} /></div>}
+              <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                <button type="button" onClick={() => { setCartOpen(false); startCart(); }} disabled={!cartLines.length || cartTotal.minutes > 16 * 60 || missing(cartTotal.price) > 0}
+                  className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-rose-500 to-pink-500 text-base font-bold text-white shadow-lg shadow-rose-500/30 transition active:scale-[0.98] disabled:opacity-50">
+                  לבחירת מועד<ArrowLeft size={19} />
+                </button>
+                <button type="button" onClick={() => setCartOpen(false)} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl border-2 border-slate-200 text-base font-bold text-slate-700 transition hover:border-rose-300 hover:text-rose-600 active:scale-[0.98]">
+                  <Plus size={18} />להוסיף עוד שירותים
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <WhatsAppFab org={org} />
     </main>
   );

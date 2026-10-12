@@ -340,6 +340,7 @@ export type Database = {
         Returns: { ref_id: string; reply_to: string | null }[]
       }
       get_booking_page: { Args: { _slug: string }; Returns: Json }
+      booking_owner_notice: { Args: { _secret: string; _appointment: string }; Returns: Json }
       get_booking_slots: {
         Args: { _slug: string; _service: string; _answers?: Json; _from?: string | null; _days?: number }
         Returns: { slot_start: string; slot_end: string }[]
