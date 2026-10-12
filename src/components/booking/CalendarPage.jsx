@@ -936,6 +936,14 @@ function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, pro
   const url = `${siteUrl.replace(/\/$/, "")}/book/${org.slug}`;
   const [headline, setHeadline] = useState(org.booking.headline);
   const [note, setNote] = useState(org.booking.note);
+  const categories = [...new Set(org.services.map((s) => s.category?.trim()).filter(Boolean))];
+  const [catNotes, setCatNotes] = useState(org.booking.categoryNotes);
+  const catDirty = categories.some((c) => (catNotes[c] ?? "") !== (org.booking.categoryNotes[c] ?? ""));
+  const saveCatNotes = () => {
+    const clean = Object.fromEntries(categories.map((c) => [c, (catNotes[c] ?? "").trim().slice(0, 1000)]).filter(([, v]) => v));
+    setCatNotes(clean);
+    update({ booking_category_notes: clean }, { categoryNotes: clean });
+  };
   const copy = async () => { try { await navigator.clipboard.writeText(url); notify("הקישור הועתק"); } catch { notify("לא ניתן להעתיק, סמנו את הקישור ידנית", "error"); } };
   const update = async (patch, ui) => {
     const { error } = await db.from("organizations").update(patch).eq("id", org.id).select("id").single();
@@ -970,6 +978,19 @@ function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, pro
               placeholder="לדוגמה: מינימום הזמנה, הנחה על כמה שירותים יחד" />
             {isAdmin && note !== org.booking.note && <Btn className="mt-2" onClick={() => { const v = note.trim(); setNote(v); update({ booking_note: v || null }, { note: v }); }}><Check size={17} />שמירת ההערה</Btn>}
           </Field>
+          {categories.length > 0 && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4">
+              <div className="text-sm font-semibold text-slate-700">הערה לכל קבוצת שירותים</div>
+              <p className="-mt-2 text-xs text-slate-500">מוצגת ללקוח מעל השירותים של הקבוצה.</p>
+              {categories.map((c) => (
+                <Field key={c} label={c}>
+                  <textarea className={`${inputCls} h-auto min-h-20 py-3`} rows={2} maxLength={1000} disabled={!isAdmin} value={catNotes[c] ?? ""}
+                    onChange={(e) => setCatNotes({ ...catNotes, [c]: e.target.value })} placeholder="ללא הערה" />
+                </Field>
+              ))}
+              {isAdmin && catDirty && <Btn className="w-fit" onClick={saveCatNotes}><Check size={17} />שמירת ההערות</Btn>}
+            </div>
+          )}
         </div>
         <ol className="mt-5 grid grid-cols-5 gap-1.5 text-center text-xs font-medium text-slate-500">
           {["שירות", "שאלות", "מועד", "פרטים", "אישור"].map((s, i) => (

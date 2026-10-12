@@ -370,6 +370,12 @@ export default function BookingFlow({ org, services }) {
                 return (
                   <div key={g ?? "other"} className="mt-6">
                     {g && group === "*" && <div className="mb-2.5 text-sm font-bold uppercase tracking-wide text-slate-400">{g}</div>}
+                    {g && org.category_notes?.[g] && (
+                      <div className="mb-3 flex items-start gap-2 rounded-2xl bg-slate-50 px-3.5 py-2.5 text-sm leading-relaxed text-slate-600 ring-1 ring-slate-100">
+                        <CircleAlert size={16} className="mt-0.5 shrink-0 text-slate-400" />
+                        <span className="whitespace-pre-line">{org.category_notes[g]}</span>
+                      </div>
+                    )}
                     <div className="flex flex-col gap-2.5">
                       {list.map((s, i) => {
                         const n = cart[s.id] ?? 0;

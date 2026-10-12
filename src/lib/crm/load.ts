@@ -52,6 +52,8 @@ export type UiBooking = {
   minPrice: number | null
   // Note shown on the service step of the booking page
   note: string
+  // Notes per service group, shown above that group on the booking page
+  categoryNotes: Record<string, string>
 }
 
 export type UiOrg = {
@@ -219,6 +221,7 @@ export async function loadOrgs(supabase: SupabaseClient<Database>, userId: strin
         phone: org.booking_phone ?? "",
         whatsapp: org.booking_whatsapp ?? "",
         note: org.booking_note ?? "",
+        categoryNotes: org.booking_category_notes && typeof org.booking_category_notes === "object" && !Array.isArray(org.booking_category_notes) ? (org.booking_category_notes as Record<string, string>) : {},
         minPrice: org.booking_min_price === null ? null : Number(org.booking_min_price),
       },
       services: (servicesRes.data ?? []).filter((x) => x.org_id === org.id),
