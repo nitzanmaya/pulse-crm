@@ -911,22 +911,18 @@ function LogoField({ org, isAdmin, fail, onSave }) {
 const cleanPhone = (v) => { const t = v.trim(); return t ? (t.startsWith("+") ? "+" : "") + t.replace(/\D/g, "") : ""; };
 
 function ContactFields({ org, isAdmin, onSave }) {
-  const [phone, setPhone] = useState(org.booking.phone);
-  const [whatsapp, setWhatsapp] = useState(org.booking.whatsapp);
-  const valid = (v) => !v || /^\+?\d{9,15}$/.test(cleanPhone(v));
-  const dirty = phone !== org.booking.phone || whatsapp !== org.booking.whatsapp;
+  const [whatsapp, setWhatsapp] = useState(org.booking.whatsapp || org.booking.phone);
+  const valid = !whatsapp || /^\+?\d{9,15}$/.test(cleanPhone(whatsapp));
+  const saved = org.booking.whatsapp || org.booking.phone;
   return (
-    <Field label="כפתורי חיוג ו-WhatsApp בטלפון">
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <input className={`${inputCls} text-right ${valid(phone) ? "" : "border-red-300"}`} dir="ltr" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="טלפון לחיוג, למשל 050-1234567" disabled={!isAdmin} />
-        <input className={`${inputCls} text-right ${valid(whatsapp) ? "" : "border-red-300"}`} dir="ltr" type="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="WhatsApp (אם שונה מהטלפון)" disabled={!isAdmin} />
+    <Field label="מספר WhatsApp לכפתור הצף">
+      <div className="flex gap-2">
+        <input className={`${inputCls} text-right ${valid ? "" : "border-red-300"}`} dir="ltr" type="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="למשל 050-1234567" disabled={!isAdmin} />
+        {isAdmin && whatsapp !== saved && (
+          <Btn variant="ghost" disabled={!valid} onClick={() => { const w = cleanPhone(whatsapp); setWhatsapp(w); onSave({ booking_whatsapp: w || null, booking_phone: null }, { whatsapp: w, phone: "" }); }}><Check size={17} /></Btn>
+        )}
       </div>
-      {isAdmin && dirty && (
-        <div className="mt-2 flex justify-end">
-          <Btn disabled={!valid(phone) || !valid(whatsapp)} onClick={() => { const p = cleanPhone(phone); const w = cleanPhone(whatsapp); setPhone(p); setWhatsapp(w); onSave({ booking_phone: p || null, booking_whatsapp: w || null }, { phone: p, whatsapp: w }); }}><Check size={17} />שמירה</Btn>
-        </div>
-      )}
-      <p className="mt-1 text-xs text-slate-500">מוצגים בתחתית דף ההזמנה בטלפון. בלי מספר הכפתורים לא יוצגו.</p>
+      <p className="mt-1 text-xs text-slate-500">מוצג בטלפון כאייקון WhatsApp בפינת דף ההזמנה. בלי מספר האייקון לא יוצג.</p>
     </Field>
   );
 }

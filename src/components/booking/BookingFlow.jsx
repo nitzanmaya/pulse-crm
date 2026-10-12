@@ -73,28 +73,16 @@ const cartTitle = (lines) => lines.map((l) => `${l.qty > 1 ? `${l.qty}× ` : ""}
 // The customer's own WhatsApp opens a chat with the business (0501234567 -> 972501234567)
 const waNumber = (n) => { const d = String(n).replace(/\D/g, ""); return d.startsWith("0") ? `972${d.slice(1)}` : d; };
 
-// Mobile only: call and WhatsApp buttons pinned to the bottom, with a light
-// sweeping across them every few seconds
-function ContactBar({ org }) {
-  if (!org.phone && !org.whatsapp) return null;
-  const btn = "relative flex h-14 flex-1 items-center justify-center gap-2 overflow-hidden rounded-2xl text-[17px] font-bold text-white shadow-lg transition active:scale-95";
+// Floating WhatsApp button (phones) with a light sweeping across it every few seconds
+function WhatsAppFab({ org }) {
+  if (!org.whatsapp) return null;
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 flex gap-3 border-t border-slate-200/70 bg-white/90 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 backdrop-blur sm:hidden">
-      {org.phone && (
-        <a href={`tel:${org.phone}`} className={`${btn} bg-gradient-to-l from-blue-600 to-sky-500 shadow-blue-500/30`}>
-          <span aria-hidden className="animate-sweep pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-l from-transparent via-white/45 to-transparent" />
-          <Phone size={21} />חיוג מהיר
-        </a>
-      )}
-      {org.whatsapp && (
-        <a href={`https://wa.me/${waNumber(org.whatsapp)}?text=${encodeURIComponent(`היי ${org.name}, הגעתי מדף ההזמנה`)}`} target="_blank" rel="noreferrer"
-          className={`${btn} bg-[#25D366] shadow-green-500/30`}>
-          <span aria-hidden className="animate-sweep pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-l from-transparent via-white/45 to-transparent [animation-delay:300ms]" />
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.33-.69-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.86s.71-2.03.97-2.31c.25-.28.55-.35.73-.35l.53.01c.17.01.4-.06.62.47.25.6.85 2.06.92 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48l-.42.49c-.14.14-.28.29-.12.57.16.28.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.17-.19.7-.82.88-1.1.19-.28.37-.23.62-.14.25.09 1.6.76 1.88.89.28.14.46.21.53.32.07.12.07.67-.18 1.36Z"/></svg>
-          WhatsApp
-        </a>
-      )}
-    </div>
+    <a href={`https://wa.me/${waNumber(org.whatsapp)}?text=${encodeURIComponent(`היי ${org.name}, הגעתי מדף ההזמנה`)}`} target="_blank" rel="noreferrer"
+      aria-label={`שליחת הודעת WhatsApp ל${org.name}`}
+      className="fixed bottom-[calc(env(safe-area-inset-bottom)+20px)] left-5 z-40 flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-[#25D366] text-white shadow-xl shadow-green-600/40 ring-4 ring-white transition hover:scale-105 active:scale-90 sm:hidden">
+      <span aria-hidden className="animate-sweep pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-l from-transparent via-white/50 to-transparent" />
+      <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor" aria-hidden><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.33-.69-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.86s.71-2.03.97-2.31c.25-.28.55-.35.73-.35l.53.01c.17.01.4-.06.62.47.25.6.85 2.06.92 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48l-.42.49c-.14.14-.28.29-.12.57.16.28.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.17-.19.7-.82.88-1.1.19-.28.37-.23.62-.14.25.09 1.6.76 1.88.89.28.14.46.21.53.32.07.12.07.67-.18 1.36Z"/></svg>
+    </a>
   );
 }
 
@@ -240,7 +228,7 @@ export default function BookingFlow({ org, services }) {
   const c = serviceColor(service?.color);
 
   return (
-    <main dir="rtl" className={`relative min-h-screen overflow-clip bg-[#fdf8fa] px-4 pt-8 sm:pb-16 sm:pt-12 ${org.phone || org.whatsapp ? "pb-32" : "pb-16"}`}>
+    <main dir="rtl" className={`relative min-h-screen overflow-clip bg-[#fdf8fa] px-4 pt-8 sm:pb-16 sm:pt-12 ${org.whatsapp ? "pb-28" : "pb-16"}`}>
       <div aria-hidden className="pointer-events-none absolute -end-32 -top-32 h-96 w-96 rounded-full bg-rose-300/30 blur-3xl" />
       <div aria-hidden className="pointer-events-none absolute -bottom-40 -start-32 h-[28rem] w-[28rem] rounded-full bg-violet-300/25 blur-3xl" />
 
@@ -339,7 +327,7 @@ export default function BookingFlow({ org, services }) {
                   </div>
                 );
               })}
-              <div className={`sticky z-10 mt-6 rounded-2xl bg-slate-900 p-4 text-white shadow-2xl transition ${org.phone || org.whatsapp ? "bottom-24 sm:bottom-4" : "bottom-4"}`}>
+              <div className={`sticky z-10 mt-6 rounded-2xl bg-slate-900 p-4 text-white shadow-2xl transition ${org.whatsapp ? "bottom-24 sm:bottom-4" : "bottom-4"}`}>
                 {cartLines.length ? (
                   <>
                     <div className="flex items-center gap-2 text-sm text-white/70"><ShoppingBag size={16} />{cartLines.reduce((t, l) => t + l.qty, 0)} פריטים · {minutesLabel(cartTotal.minutes)}</div>
@@ -620,7 +608,7 @@ export default function BookingFlow({ org, services }) {
           מופעל על ידי Pulse CRM <Heart size={13} className="animate-heartbeat fill-rose-400 text-rose-400" />
         </p>
       </div>
-      <ContactBar org={org} />
+      <WhatsAppFab org={org} />
     </main>
   );
 }
