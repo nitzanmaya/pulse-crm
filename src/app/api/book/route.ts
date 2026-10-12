@@ -4,6 +4,7 @@ import type { BookingResult, Database } from "@/lib/database.types"
 import { env } from "@/lib/env"
 import { dispatchNotifications } from "@/lib/notify/dispatch"
 import { syncPendingAppointments } from "@/lib/calendar/google"
+import { notifyOwnerOfBooking } from "@/lib/notify/owner-email"
 
 type Body = {
   slug?: string
@@ -82,6 +83,11 @@ export async function POST(request: NextRequest) {
     delivered = (await dispatchNotifications({ appointmentId: booking.id })).delivered
   } catch (e) {
     console.error("instant confirmation failed; the cron will retry", e)
+  }
+  try {
+    await notifyOwnerOfBooking(booking.id)
+  } catch (e) {
+    console.error("new booking email to the business failed", e)
   }
   try {
     await syncPendingAppointments({ appointmentId: booking.id })

@@ -13,6 +13,7 @@ import { botTexts } from "@/lib/bot/texts"
 import { getAvailableSlots, syncPendingAppointments } from "@/lib/calendar/google"
 import { geocode } from "@/lib/geo"
 import { botMessageText, markRead, sendWhatsAppPayload, toWhatsAppPayload, type EchoMessage, type InboundMessage, type StatusUpdate } from "@/lib/notify/whatsapp"
+import { notifyOwnerOfBooking } from "@/lib/notify/owner-email"
 
 type Db = SupabaseClient<Database>
 
@@ -98,7 +99,9 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
           if (bookError.hint !== "slot_taken") console.error("bot booking failed", bookError)
           return { ok: false, error: bookError.message }
         }
-        return { ok: true, id: (booked as { id: string }).id }
+        const id = (booked as { id: string }).id
+        await notifyOwnerOfBooking(id).catch((e) => console.error("new booking email to the business failed", e))
+        return { ok: true, id }
       },
     },
   }
