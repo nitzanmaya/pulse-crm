@@ -935,6 +935,7 @@ function ContactFields({ org, isAdmin, onSave }) {
 function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, providers }) {
   const url = `${siteUrl.replace(/\/$/, "")}/book/${org.slug}`;
   const [headline, setHeadline] = useState(org.booking.headline);
+  const [note, setNote] = useState(org.booking.note);
   const copy = async () => { try { await navigator.clipboard.writeText(url); notify("הקישור הועתק"); } catch { notify("לא ניתן להעתיק, סמנו את הקישור ידנית", "error"); } };
   const update = async (patch, ui) => {
     const { error } = await db.from("organizations").update(patch).eq("id", org.id).select("id").single();
@@ -963,6 +964,11 @@ function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, pro
               <input className={inputCls} value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="לדוגמה: ניקוי מקצועי עד הבית, בלי לכלוך" disabled={!isAdmin} maxLength={160} />
               {isAdmin && headline !== org.booking.headline && <Btn variant="ghost" onClick={() => update({ booking_headline: headline || null }, { headline })}><Check size={17} /></Btn>}
             </div>
+          </Field>
+          <Field label="הערה במסך בחירת השירותים">
+            <textarea className={`${inputCls} h-auto min-h-24 py-3`} rows={3} value={note} onChange={(e) => setNote(e.target.value)} disabled={!isAdmin} maxLength={600}
+              placeholder="לדוגמה: מינימום הזמנה, הנחה על כמה שירותים יחד" />
+            {isAdmin && note !== org.booking.note && <Btn className="mt-2" onClick={() => { const v = note.trim(); setNote(v); update({ booking_note: v || null }, { note: v }); }}><Check size={17} />שמירת ההערה</Btn>}
           </Field>
         </div>
         <ol className="mt-5 grid grid-cols-5 gap-1.5 text-center text-xs font-medium text-slate-500">

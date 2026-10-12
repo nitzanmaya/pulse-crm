@@ -30,6 +30,7 @@ type Organization = {
   booking_phone: string | null
   booking_whatsapp: string | null
   booking_min_price: number | null
+  booking_note: string | null
 }
 
 type Lead = {
