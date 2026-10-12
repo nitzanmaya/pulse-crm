@@ -178,6 +178,16 @@ export const SERVICE_COLORS: Record<string, { dot: string; soft: string; text: s
   violet: { dot: "bg-violet-500", soft: "bg-violet-50", text: "text-violet-700", border: "border-violet-300", grad: "from-violet-400 to-purple-500" },
   emerald: { dot: "bg-emerald-500", soft: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-300", grad: "from-emerald-400 to-teal-500" },
   amber: { dot: "bg-amber-500", soft: "bg-amber-50", text: "text-amber-700", border: "border-amber-300", grad: "from-amber-400 to-orange-500" },
+  red: { dot: "bg-red-500", soft: "bg-red-50", text: "text-red-700", border: "border-red-300", grad: "from-red-400 to-rose-600" },
+  orange: { dot: "bg-orange-500", soft: "bg-orange-50", text: "text-orange-700", border: "border-orange-300", grad: "from-orange-400 to-red-500" },
+  yellow: { dot: "bg-yellow-500", soft: "bg-yellow-50", text: "text-yellow-700", border: "border-yellow-300", grad: "from-yellow-300 to-amber-500" },
+  lime: { dot: "bg-lime-500", soft: "bg-lime-50", text: "text-lime-700", border: "border-lime-300", grad: "from-lime-400 to-green-500" },
+  green: { dot: "bg-green-500", soft: "bg-green-50", text: "text-green-700", border: "border-green-300", grad: "from-green-400 to-emerald-600" },
+  teal: { dot: "bg-teal-500", soft: "bg-teal-50", text: "text-teal-700", border: "border-teal-300", grad: "from-teal-400 to-cyan-600" },
+  cyan: { dot: "bg-cyan-500", soft: "bg-cyan-50", text: "text-cyan-700", border: "border-cyan-300", grad: "from-cyan-400 to-sky-500" },
+  blue: { dot: "bg-blue-500", soft: "bg-blue-50", text: "text-blue-700", border: "border-blue-300", grad: "from-blue-500 to-indigo-600" },
+  fuchsia: { dot: "bg-fuchsia-500", soft: "bg-fuchsia-50", text: "text-fuchsia-700", border: "border-fuchsia-300", grad: "from-fuchsia-400 to-pink-600" },
+  slate: { dot: "bg-slate-500", soft: "bg-slate-50", text: "text-slate-700", border: "border-slate-300", grad: "from-slate-500 to-slate-700" },
 }
 export const serviceColor = (c?: string | null) => SERVICE_COLORS[c ?? "rose"] ?? SERVICE_COLORS.rose
 
