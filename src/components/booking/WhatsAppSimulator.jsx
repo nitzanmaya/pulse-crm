@@ -94,15 +94,23 @@ export default function WhatsAppSimulator({ org, db, bot = org.bot }) {
       customerName: "דנה",
       texts: botTexts(bot.scripts),
       services,
-      getSlots: async (service, answers) => {
+      getSlots: async (service, answers, place) => {
         if (!service.id.startsWith("demo-") && org.booking.enabled) {
-          const { data, error } = await db.rpc("get_booking_slots", { _slug: org.slug, _service: service.id, _answers: answers, _days: 14 });
-          if (!error) return data.map((s) => ({ start: s.slot_start, end: s.slot_end, window: org.booking.windows.length > 0 }));
+          const { data, error } = await db.rpc("get_booking_slots_near", { _slug: org.slug, _service: service.id, _answers: answers, _from: null, _days: 14, _lat: place?.lat ?? null, _lng: place?.lng ?? null });
+          if (!error) return data.map((s) => ({ start: s.slot_start, end: s.slot_end, near: s.near, window: org.booking.windows.length > 0 }));
         }
         return demoSlots(org.rules, quote(service, answers).minutes);
       },
+      locate: org.booking.maxKm
+        ? async (address) => {
+            const res = await fetch(`/api/geocode?q=${encodeURIComponent(address)}`);
+            if (res.status === 404) return null;
+            if (!res.ok) throw new Error("geocode unavailable");
+            return res.json();
+          }
+        : undefined,
     },
-  }), [org.name, org.slug, org.booking.enabled, org.booking.windows, org.rules, services, db, bot]);
+  }), [org.name, org.slug, org.booking.enabled, org.booking.windows, org.booking.maxKm, org.rules, services, db, bot]);
 
   const [msgs, setMsgs] = useState([]);
   const [state, setState] = useState(null);

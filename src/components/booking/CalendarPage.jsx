@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import {
   CalendarDays, ChevronRight, ChevronLeft, Plus, Clock, Mail, User, Check, X, Trash2, Wrench,
   Sparkles, ListChecks, Settings2, Link2, Copy, ExternalLink, Ban, RefreshCw, Coins, Timer, CircleSlash,
-  MessageCircle, CalendarCheck, Wand2, GripVertical, CalendarX2, Globe, ArrowLeft,
+  MessageCircle, CalendarCheck, Wand2, GripVertical, CalendarX2, Globe, ArrowLeft, MapPin,
 } from "lucide-react";
 import { Card, Btn, Field, inputCls, SectionTitle, Modal, Toggle, ICON_NUDGE } from "@/components/ui";
 import {
@@ -311,7 +311,15 @@ function AppointmentModal({ appt, org, db, userId, canEdit, isAdmin, notify, fai
         }
       }
     }
+    // Distance filter: visits added here count too once their address is on the map
+    let coords = {};
+    if (org.booking.maxKm && (isNew || (d.address || "") !== (appt.address || ""))) {
+      const res = d.address ? await fetch(`/api/geocode?q=${encodeURIComponent(d.address)}`).catch(() => null) : null;
+      const p = res?.ok ? await res.json().catch(() => null) : null;
+      coords = { lat: p?.lat ?? null, lng: p?.lng ?? null };
+    }
     const row = {
+      ...coords,
       service_id: d.service_id || null,
       customer_name: d.customer_name.trim(),
       phone: d.phone || null,
@@ -688,6 +696,7 @@ export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
       booking_slot_minutes: Number(b.slotMinutes), booking_buffer_minutes: Number(b.bufferMinutes),
       booking_min_notice_hours: Number(b.minNoticeHours), booking_max_days: Number(b.maxDays),
       booking_windows: [...b.windows].sort((x, y) => (x.start < y.start ? -1 : 1)),
+      booking_max_km: b.maxKm ? Number(b.maxKm) : null,
     }).eq("id", org.id).select("id").single();
     setBusy(false);
     const error = del.error || ins.error || upd.error;
@@ -785,6 +794,15 @@ export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
           ) : (
             <Field label="מרווח בין תחילות תורים">{sel("slotMinutes", [15, 30, 45, 60], (v) => `כל ${minutesLabel(v)}`)}</Field>
           )}
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Toggle checked={Boolean(b.maxKm)} disabled={!isAdmin} onChange={(on) => setB({ ...b, maxKm: on ? 20 : null })} icon={MapPin}
+              title="סינון מועדים לפי מרחק"
+              text="הלקוח כותב כתובת לפני בחירת המועד, ומוצעים לו רק מועדים קרובים לביקורים האחרים באותו יום" />
+            {b.maxKm ? (
+              <Field label="מרחק מקסימלי מהביקור שלפני ושאחרי (קו אווירי)">{sel("maxKm", [5, 10, 15, 20, 30, 40, 50], (v) => `עד ${v} ק״מ`)}</Field>
+            ) : null}
+            {b.maxKm ? <p className="text-sm text-slate-500">מועדים ליד לקוח קיים מוצגים ראשונים עם הסימון ״אנחנו כבר באזור שלך״. יום בלי ביקורים פתוח לכולם. תור שנקבע ידנית נבדק רק אם יש בו כתובת.</p> : null}
+          </div>
           <Field label="זמן מעבר בין תורים">{sel("bufferMinutes", [0, 10, 15, 30, 45, 60], (v) => (v ? minutesLabel(v) : "ללא"))}</Field>
           <Field label="הזמנה מוקדמת לפחות">{sel("minNoticeHours", [0, 2, 4, 12, 24, 48], (v) => (v ? `${v} שעות מראש` : "אפשר גם לעכשיו"))}</Field>
           <Field label="אפשר להזמין עד">{sel("maxDays", [7, 14, 30, 60, 90], (v) => `${v} ימים קדימה`)}</Field>

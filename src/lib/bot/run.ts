@@ -11,6 +11,7 @@ import { env } from "@/lib/env"
 import { engineTurn, type Conversation, type ConversationMode, type ConversationState, type EngineContext, type Faq, type MenuItem } from "@/lib/bot/engine"
 import { botTexts } from "@/lib/bot/texts"
 import { getAvailableSlots, syncPendingAppointments } from "@/lib/calendar/google"
+import { geocode } from "@/lib/geo"
 import { botMessageText, markRead, sendWhatsAppPayload, toWhatsAppPayload, type EchoMessage, type InboundMessage, type StatusUpdate } from "@/lib/notify/whatsapp"
 
 type Db = SupabaseClient<Database>
@@ -60,6 +61,8 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
     conv = { ...conv, mode: "bot", state: "WELCOME", context: {} }
   }
   const services = (ing.services ?? []).map((s) => ({ ...s, price: Number(s.price) }))
+  const page = org.booking_enabled ? await db.rpc("get_booking_page", { _slug: org.slug }) : null
+  const pageOrg = (page?.data as { org?: { windowed?: boolean; max_km?: number | null } } | null)?.org
 
   const ctx: EngineContext = {
     texts: botTexts(ing.scripts),
@@ -71,16 +74,13 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
       orgName: org.name,
       customerName: conv.contact_name ?? msg.name,
       services: org.booking_enabled ? services : [],
-      getSlots: async (service, answers) => {
-        const [slots, page] = await Promise.all([
-          getAvailableSlots({ db, slug: org.slug, orgId: org.id, serviceId: service.id, answers, days: 14 }),
-          db.rpc("get_booking_page", { _slug: org.slug }),
-        ])
-        const windowed = Boolean((page.data as { org?: { windowed?: boolean } } | null)?.org?.windowed)
-        return windowed ? slots.map((s) => ({ ...s, window: true })) : slots
+      getSlots: async (service, answers, place) => {
+        const slots = await getAvailableSlots({ db, slug: org.slug, orgId: org.id, serviceId: service.id, answers, days: 14, place })
+        return pageOrg?.windowed ? slots.map((s) => ({ ...s, window: true })) : slots
       },
-      book: async ({ service, answers, slot, address, email }) => {
-        const { data: booked, error: bookError } = await db.rpc("book_appointment", {
+      locate: pageOrg?.max_km ? geocode : undefined,
+      book: async ({ service, answers, slot, address, place, email }) => {
+        const { data: booked, error: bookError } = await db.rpc("book_appointment_geo", {
           _slug: org.slug,
           _service: service.id,
           _starts_at: slot.start,
@@ -89,7 +89,10 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
           _phone: msg.from,
           _address: address,
           _email: email ?? null,
+          _notes: null,
           _source: "whatsapp_bot",
+          _lat: place?.lat ?? null,
+          _lng: place?.lng ?? null,
         })
         if (bookError) {
           if (bookError.hint !== "slot_taken") console.error("bot booking failed", bookError)

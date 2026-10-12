@@ -81,23 +81,50 @@ export default function BookingFlow({ org, services }) {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const [reload, setReload] = useState(0);
+  // Distance limit: the address comes first, slots are filtered around it
+  const geo = Boolean(org.max_km);
+  const [where, setWhere] = useState("");
+  const [place, setPlace] = useState(null);
+  const [geoSkip, setGeoSkip] = useState(false);
+  const [geoBusy, setGeoBusy] = useState(false);
+  const [geoMisses, setGeoMisses] = useState(0);
+  const needsPlace = geo && !place && !geoSkip;
 
   const needsAnswers = (service?.questions ?? []).filter((q) => q.required && !String(answers[q.id] ?? "").trim());
   const go = (n) => { setError(""); setStep(n); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   // Free slots for the chosen service (duration depends on the answers)
   useEffect(() => {
-    if (step !== 2 || !service) return;
+    if (step !== 2 || !service || needsPlace) return;
     let alive = true;
-    db.rpc("get_booking_slots", { _slug: org.slug, _service: service.id, _answers: answers, _from: from, _days: WINDOW }).then(({ data, error: e }) => {
+    db.rpc("get_booking_slots_near", { _slug: org.slug, _service: service.id, _answers: answers, _from: from, _days: WINDOW, _lat: place?.lat ?? null, _lng: place?.lng ?? null }).then(({ data, error: e }) => {
       if (!alive) return;
       if (e) { setError("לא הצלחנו לטעון שעות פנויות. נסו לרענן את הדף."); setSlots([]); return; }
-      const list = data.map((s) => ({ start: s.slot_start, end: s.slot_end }));
+      const list = data.map((s) => ({ start: s.slot_start, end: s.slot_end, near: s.near }));
       setSlots(list);
       setDay((d) => (d && list.some((s) => localParts(s.start).day === d) ? d : list[0] ? localParts(list[0].start).day : null));
     });
     return () => { alive = false; };
-  }, [step, service, answers, from, org.slug, db, reload]);
+  }, [step, service, answers, from, org.slug, db, reload, needsPlace, place]);
+
+  const locate = async () => {
+    setGeoBusy(true); setError("");
+    const res = await fetch(`/api/geocode?q=${encodeURIComponent(where)}`).catch(() => null);
+    const body = await res?.json().catch(() => null);
+    setGeoBusy(false);
+    if (res?.ok && body) {
+      setPlace(body); setSlots(null); setSlot(null);
+      setForm((f) => ({ ...f, address: f.address || where.trim() }));
+      return;
+    }
+    if (res?.status === 404) {
+      setGeoMisses((n) => n + 1);
+      setError("לא מצאנו את הכתובת במפה. נסו לכתוב רחוב ועיר, למשל: הרצל 12, רמת גן");
+      return;
+    }
+    // Map service down: show every free slot rather than block the booking
+    setGeoSkip(true); setForm((f) => ({ ...f, address: f.address || where.trim() }));
+  };
 
   const days = useMemo(() => Array.from({ length: WINDOW }, (_, i) => addDays(from, i)), [from]);
   const byDay = useMemo(() => {
@@ -105,12 +132,15 @@ export default function BookingFlow({ org, services }) {
     for (const s of slots ?? []) (m[localParts(s.start).day] ||= []).push(s);
     return m;
   }, [slots]);
+  const nearDays = useMemo(() => new Set((slots ?? []).filter((s) => s.near).map((s) => localParts(s.start).day)), [slots]);
   const daySlots = (day && byDay[day]) || [];
+  const nearSlots = daySlots.filter((s) => s.near);
   const parts = [
+    { label: "אנחנו כבר באזור שלך", icon: MapPin, near: true, items: nearSlots },
     { label: "בוקר", icon: Sun, items: daySlots.filter((s) => localParts(s.start).hour < 12) },
     { label: "צהריים", icon: Sunset, items: daySlots.filter((s) => { const h = localParts(s.start).hour; return h >= 12 && h < 17; }) },
     { label: "ערב", icon: Moon, items: daySlots.filter((s) => localParts(s.start).hour >= 17) },
-  ].filter((p) => p.items.length);
+  ].map((p) => (p.near ? p : { ...p, items: p.items.filter((s) => !s.near) })).filter((p) => p.items.length);
   const maxFrom = addDays(todayKey(), Math.max(0, org.max_days - WINDOW + 1));
 
   const phoneOk = form.phone.replace(/\D/g, "").length >= 9;
@@ -129,7 +159,7 @@ export default function BookingFlow({ org, services }) {
     const res = await fetch("/api/book", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slug: org.slug, serviceId: service.id, startsAt: slot.start, answers, ...form }),
+      body: JSON.stringify({ slug: org.slug, serviceId: service.id, startsAt: slot.start, answers, ...form, ...(place ? { lat: place.lat, lng: place.lng } : {}) }),
     }).catch(() => null);
     const body = await res?.json().catch(() => ({}));
     setBusy(false);
@@ -142,7 +172,7 @@ export default function BookingFlow({ org, services }) {
     setError(body?.error === "invalid" ? "חלק מהפרטים לא תקינים, בדקו את הטלפון והמייל." : "משהו השתבש בשליחה. נסו שוב בעוד רגע.");
   };
 
-  const reset = () => { setService(null); setAnswers({}); setSlot(null); setSlots(null); setResult(null); setForm({ name: "", phone: "", address: "", email: "", notes: "" }); go(0); };
+  const reset = () => { setService(null); setAnswers({}); setSlot(null); setSlots(null); setResult(null); setForm({ name: "", phone: "", address: "", email: "", notes: "" }); setPlace(null); setWhere(""); setGeoSkip(false); setGeoMisses(0); go(0); };
   const c = serviceColor(service?.color);
 
   return (
@@ -237,8 +267,30 @@ export default function BookingFlow({ org, services }) {
 
           {step === 2 && service && (
             <>
-              <h2 className="text-2xl font-bold text-slate-900">מתי נוח לכם?</h2>
+              <h2 className="text-2xl font-bold text-slate-900">{needsPlace ? "לאן מגיעים?" : "מתי נוח לכם?"}</h2>
               <div className="mt-2"><QuoteBar service={service} answers={answers} /></div>
+
+              {needsPlace && (
+                <form className="mt-6 flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); if (where.trim().length >= 3 && !geoBusy) locate(); }}>
+                  <p className="text-base text-slate-500">כתבו את כתובת הביקור, ונראה לכם את המועדים שמתאימים לאזור שלכם.</p>
+                  <input className={input} autoFocus autoComplete="street-address" value={where} onChange={(e) => setWhere(e.target.value)} placeholder="רחוב, מספר בית, עיר" />
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    {geoMisses >= 2 ? (
+                      <button type="button" onClick={() => { setGeoSkip(true); setError(""); setForm((f) => ({ ...f, address: f.address || where.trim() })); }} className="text-[15px] font-semibold text-slate-500 hover:text-rose-600 hover:underline">להמשיך בלי לאתר את הכתובת</button>
+                    ) : <span />}
+                    <NextBtn disabled={where.trim().length < 3} busy={geoBusy}>הצגת מועדים</NextBtn>
+                  </div>
+                </form>
+              )}
+
+              {!needsPlace && (<>
+              {place && (
+                <div className="mt-4 flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-2.5 text-[15px] text-slate-600">
+                  <MapPin size={17} className="shrink-0 text-rose-500" />
+                  <span className="min-w-0 flex-1 truncate">{where.trim()}</span>
+                  <button type="button" onClick={() => { setPlace(null); setSlots(null); setSlot(null); }} className="shrink-0 font-semibold text-rose-600 hover:underline">שינוי</button>
+                </div>
+              )}
 
               <div className="mt-6 flex items-center gap-2">
                 <button onClick={() => setFrom(addDays(from, -WINDOW))} disabled={from <= todayKey()} aria-label="ימים קודמים" className="shrink-0 rounded-full p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><ChevronRight size={22} /></button>
@@ -251,7 +303,9 @@ export default function BookingFlow({ org, services }) {
                         className={`flex w-16 shrink-0 snap-start flex-col items-center rounded-2xl border-2 py-2.5 transition duration-200 active:scale-95 disabled:border-transparent disabled:bg-slate-50 disabled:text-slate-300 ${active ? "border-rose-400 bg-gradient-to-b from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/30" : "border-slate-100 bg-white text-slate-700 hover:border-rose-200"}`}>
                         <span className={`text-xs font-semibold ${active ? "text-white/90" : ""}`}>{d === todayKey() ? "היום" : WEEKDAYS_SHORT[dowOf(d)]}</span>
                         <span className="text-xl font-bold tabular-nums">{Number(d.slice(8))}</span>
-                        <span className={`mt-0.5 h-1.5 w-1.5 rounded-full ${n ? (active ? "bg-white" : "bg-emerald-400") : "bg-transparent"}`} />
+                        {nearDays.has(d)
+                          ? <MapPin size={11} className={`mt-0.5 ${active ? "text-white" : "text-rose-500"}`} aria-label="כבר באזור שלך" />
+                          : <span className={`mt-0.5 h-1.5 w-1.5 rounded-full ${n ? (active ? "bg-white" : "bg-emerald-400") : "bg-transparent"}`} />}
                       </button>
                     );
                   })}
@@ -269,8 +323,8 @@ export default function BookingFlow({ org, services }) {
                   </div>
                 )}
                 {day && parts.map((p) => (
-                  <div key={p.label} className="mb-4">
-                    <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-500"><p.icon size={16} />{p.label}</div>
+                  <div key={p.label} className={p.near ? "mb-5 rounded-2xl bg-rose-50/70 p-3 ring-1 ring-rose-100" : "mb-4"}>
+                    <div className={`mb-2 flex items-center gap-1.5 text-sm font-semibold ${p.near ? "text-rose-600" : "text-slate-500"}`}><p.icon size={16} />{p.label}</div>
                     <div className={`grid gap-2 ${org.windowed ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4"}`}>
                       {p.items.map((s, i) => (
                         <button key={s.start} onClick={() => setSlot(s)} aria-pressed={slot?.start === s.start} style={{ animationDelay: `${i * 25}ms` }}
@@ -283,9 +337,11 @@ export default function BookingFlow({ org, services }) {
                 ))}
               </div>
 
+              </>)}
+
               <div className="mt-6 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
                 <button onClick={() => go(service.questions?.length ? 1 : 0)} className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-500 transition hover:text-rose-600"><ArrowRight size={18} />חזרה</button>
-                <NextBtn disabled={!slot} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${slotLabel({ ...slot, window: org.windowed })}` : "בחרו שעה"}</NextBtn>
+                {!needsPlace && <NextBtn disabled={!slot} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${slotLabel({ ...slot, window: org.windowed })}` : "בחרו שעה"}</NextBtn>}
               </div>
             </>
           )}

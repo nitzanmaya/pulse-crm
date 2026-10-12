@@ -8,7 +8,8 @@
 import { quote, localParts, fmtTime, fmtDay, slotLabel, WEEKDAYS_HE, minutesLabel, type Answers, type BookableService } from "@/lib/booking/shared"
 import { DEFAULT_BOT_TEXTS, fill, type BotTextKey, type BotTexts } from "@/lib/bot/texts"
 
-export type Slot = { start: string; end: string }
+export type Slot = { start: string; end: string; near?: boolean }
+export type Place = { lat: number; lng: number }
 export type BotOption = { id: string; label: string; description?: string }
 export type BotCard = { title: string; lines: string[] }
 export type BotMessage = { text: string; options?: BotOption[]; card?: BotCard }
@@ -24,15 +25,20 @@ export type BotState = {
   day?: string
   slot?: Slot
   address?: string
+  place?: Place
+  geoMisses?: number
   email?: string
 }
 
 export type BotContext = {
   orgName: string
   services: BookableService[]
-  getSlots: (service: BookableService, answers: Answers) => Promise<Slot[]>
+  getSlots: (service: BookableService, answers: Answers, place?: Place) => Promise<Slot[]>
+  // Set when the business limits the distance between visits: the address is
+  // asked before the date, and only slots that fit the area are offered
+  locate?: (address: string) => Promise<Place | null>
   // Real bookings (webhook); the simulator leaves it out
-  book?: (s: { service: BookableService; answers: Answers; slot: Slot; address: string; email?: string }) => Promise<{ ok: boolean; id?: string; error?: string }>
+  book?: (s: { service: BookableService; answers: Answers; slot: Slot; address: string; place?: Place; email?: string }) => Promise<{ ok: boolean; id?: string; error?: string }>
   // Scripts edited in the admin (defaults in texts.ts)
   texts?: BotTexts
   customerName?: string
@@ -96,7 +102,7 @@ function askQuestion(ctx: BotContext, state: BotState): BotMessage | null {
 
 async function askDay(ctx: BotContext, state: BotState, events: BotEvent[]): Promise<BotMessage[]> {
   const service = serviceOf(ctx, state)
-  const slots = state.slots ?? (await ctx.getSlots(service, state.answers))
+  const slots = state.slots ?? (await ctx.getSlots(service, state.answers, state.place))
   state.slots = slots
   const days = [...new Set(slots.map((s) => localParts(s.start).day))].slice(0, 6)
   if (!state.slots.length) {
@@ -106,18 +112,36 @@ async function askDay(ctx: BotContext, state: BotState, events: BotEvent[]): Pro
   }
   events.push({ kind: "slots", text: `נבדקו שעות פנויות ביומן: ${slots.length} אפשרויות ב-${days.length} ימים` })
   state.step = "day"
-  state.options = days.map((d) => ({ id: d, label: `${WEEKDAYS_HE[localParts(`${d}T12:00:00Z`).dow]} ${fmtDay(d, { day: "numeric", month: "numeric" })}` }))
-  return [{ text: say(ctx, "day_prompt", { service: service.name }), options: state.options }]
+  const near = new Set(slots.filter((s) => s.near).map((s) => localParts(s.start).day))
+  state.options = days.map((d) => ({ id: d, label: `${WEEKDAYS_HE[localParts(`${d}T12:00:00Z`).dow]} ${fmtDay(d, { day: "numeric", month: "numeric" })}${near.has(d) ? " 📍" : ""}` }))
+  const hint = days.some((d) => near.has(d)) ? "\n📍 = אנחנו כבר באזור שלך באותו יום" : ""
+  return [{ text: say(ctx, "day_prompt", { service: service.name }) + hint, options: state.options }]
 }
 
 function askTime(ctx: BotContext, state: BotState): BotMessage {
   const daySlots = (state.slots ?? []).filter((s) => localParts(s.start).day === state.day)
-  // Spread up to 8 choices across the day
-  const step = Math.max(1, Math.floor(daySlots.length / 8))
-  const picks = daySlots.filter((_, i) => i % step === 0).slice(0, 8)
+  // Slots next to a visit we already have in the area first, then up to 8
+  // choices spread across the day
+  const near = daySlots.filter((s) => s.near).slice(0, 8)
+  const rest = daySlots.filter((s) => !s.near)
+  const step = Math.max(1, Math.floor(rest.length / (8 - near.length || 1)))
+  const picks = [...near, ...rest.filter((_, i) => i % step === 0)].slice(0, 8)
   state.step = "time"
-  state.options = [...picks.map((s) => ({ id: s.start, label: slotLabel(s) })), { id: "back", label: "↩️ יום אחר" }]
+  state.options = [...picks.map((s) => ({ id: s.start, label: `${slotLabel(s)}${s.near ? " 📍" : ""}` })), { id: "back", label: "↩️ יום אחר" }]
   return { text: say(ctx, "time_prompt", { date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "numeric" }), service: serviceOf(ctx, state).name }), options: state.options }
+}
+
+// Distance mode: where the visit is, before any date is offered
+function askPlace(state: BotState): BotMessage {
+  state.step = "address"
+  state.options = []
+  return { text: "📍 לאיזו כתובת מגיעים?\nכך אציע רק מועדים שמתאימים לאזור שלך. למשל: הרצל 12, רמת גן" }
+}
+
+// Next step once the service details are in: the address (distance mode) or the day
+async function afterDetails(ctx: BotContext, state: BotState, events: BotEvent[]): Promise<BotMessage[]> {
+  if (ctx.locate && !state.address) return [askPlace(state)]
+  return askDay(ctx, state, events)
 }
 
 // Optional: lets the reminder go out by email; anyone can skip it
@@ -192,7 +216,7 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
       const q = askQuestion(ctx, state)
       const service = serviceOf(ctx, state)
       const intro: BotMessage = { text: `מעולה, ${service.name} 🙌${service.description ? `\n${service.description}` : ""}` }
-      return q ? reply(intro, q) : reply(intro, ...(await askDay(ctx, state, events)))
+      return q ? reply(intro, q) : reply(intro, ...(await afterDetails(ctx, state, events)))
     }
     case "question": {
       const service = serviceOf(ctx, state)
@@ -214,7 +238,7 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
       const next = askQuestion(ctx, state)
       if (next) return reply(next)
       const qq = quote(service, state.answers)
-      return reply({ text: `רשמתי ✍️ משך משוער ${minutesLabel(qq.minutes)}, מחיר ${ils(qq.price)}.` }, ...(await askDay(ctx, state, events)))
+      return reply({ text: `רשמתי ✍️ משך משוער ${minutesLabel(qq.minutes)}, מחיר ${ils(qq.price)}.` }, ...(await afterDetails(ctx, state, events)))
     }
     case "day": {
       const o = match(state.options, input)
@@ -227,6 +251,8 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
       if (!o) return retry()
       if (o.id === "back") return reply(...(await askDay(ctx, state, events)))
       state.slot = state.slots!.find((s) => s.start === o.id)
+      // Distance mode already has the address
+      if (state.address) return reply({ text: `נרשם: ${fmtDay(state.day!, { weekday: "long", day: "numeric", month: "numeric" })} · ${slotLabel(state.slot!)} ✅` }, askEmail(state))
       state.step = "address"
       state.options = []
       return reply({ text: say(ctx, "address_prompt", { time: slotLabel(state.slot!), date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "numeric" }) }) })
@@ -234,6 +260,22 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
     case "address": {
       const a = (input.text ?? "").trim()
       if (a.length < 4) return reply({ text: "אפשר כתובת מלאה? למשל: הרצל 12, רמת גן 🏠" })
+      if (ctx.locate && !state.slot) {
+        let place: Place | null = null
+        let down = false
+        try {
+          place = await ctx.locate(a)
+        } catch {
+          down = true
+        }
+        state.geoMisses = (state.geoMisses ?? 0) + (place || down ? 0 : 1)
+        // Two misses, or the map is down: carry on with every free slot
+        if (!place && !down && state.geoMisses < 2) return reply({ text: "לא מצאתי את הכתובת במפה 🙈 אפשר לכתוב רחוב ועיר? למשל: הרצל 12, רמת גן" })
+        state.address = a
+        state.place = place ?? undefined
+        state.slots = undefined
+        return reply(...(await askDay(ctx, state, events)))
+      }
       state.address = a
       return reply(askEmail(state))
     }
@@ -253,7 +295,7 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
       if (o.id === "change") return reply(...(await askDay(ctx, state, events)))
       const service = serviceOf(ctx, state)
       if (ctx.book) {
-        const r = await ctx.book({ service, answers: state.answers, slot: state.slot!, address: state.address!, email: state.email })
+        const r = await ctx.book({ service, answers: state.answers, slot: state.slot!, address: state.address!, place: state.place, email: state.email })
         if (!r.ok) {
           state.slots = undefined
           return reply({ text: say(ctx, "slot_taken") }, ...(await askDay(ctx, state, events)))
