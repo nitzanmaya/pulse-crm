@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       })
 
   if (error) {
-    const code = error.hint === "slot_taken" ? "slot_taken" : error.code === "22023" ? "invalid" : error.code === "P0002" ? "not_found" : "failed"
+    const code = error.hint === "slot_taken" ? "slot_taken" : error.hint === "below_minimum" ? "below_minimum" : error.code === "22023" ? "invalid" : error.code === "P0002" ? "not_found" : "failed"
     if (code === "failed") console.error("book_appointment_geo failed", error)
     return NextResponse.json({ error: code, message: code === "invalid" ? error.message : undefined }, { status: code === "failed" ? 500 : 409 })
   }

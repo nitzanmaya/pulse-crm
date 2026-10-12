@@ -710,6 +710,7 @@ export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
       booking_min_notice_hours: Number(b.minNoticeHours), booking_max_days: Number(b.maxDays),
       booking_windows: [...b.windows].sort((x, y) => (x.start < y.start ? -1 : 1)),
       booking_max_km: b.maxKm ? Number(b.maxKm) : null,
+      booking_min_price: Number(b.minPrice) > 0 ? Number(b.minPrice) : null,
     }).eq("id", org.id).select("id").single();
     setBusy(false);
     const error = del.error || ins.error || upd.error;
@@ -816,6 +817,10 @@ export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
             ) : null}
             {b.maxKm ? <p className="text-sm text-slate-500">מועדים ליד לקוח קיים מוצגים ראשונים עם הסימון ״אנחנו כבר באזור שלך״. יום בלי ביקורים פתוח לכולם. תור שנקבע ידנית נבדק רק אם יש בו כתובת.</p> : null}
           </div>
+          <Field label="מינימום הזמנה בדף ההזמנה (₪)">
+            <input type="number" min={0} max={100000} inputMode="numeric" disabled={!isAdmin} className={inputCls} value={b.minPrice ?? ""}
+              onChange={(e) => setB({ ...b, minPrice: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) })} placeholder="ללא מינימום" />
+          </Field>
           <Field label="זמן מעבר בין תורים">{sel("bufferMinutes", [0, 10, 15, 30, 45, 60], (v) => (v ? minutesLabel(v) : "ללא"))}</Field>
           <Field label="הזמנה מוקדמת לפחות">{sel("minNoticeHours", [0, 2, 4, 12, 24, 48], (v) => (v ? `${v} שעות מראש` : "אפשר גם לעכשיו"))}</Field>
           <Field label="אפשר להזמין עד">{sel("maxDays", [7, 14, 30, 60, 90], (v) => `${v} ימים קדימה`)}</Field>
