@@ -499,6 +499,12 @@ export default function BookingFlow({ org, services }) {
               )}
 
               {!needsPlace && (<>
+              {org.windowed && (
+                <div className="mt-4 flex items-start gap-2.5 rounded-2xl bg-sky-50 px-4 py-3 text-[15px] text-sky-900 ring-1 ring-sky-100">
+                  <Timer size={18} className="mt-0.5 shrink-0 text-sky-500" />
+                  <span><span className="font-semibold">השעות הן טווח הגעה.</span> בוחרים טווח, והטכנאי יגיע מתישהו בתוכו.</span>
+                </div>
+              )}
               {place && (
                 <div className="mt-4 flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-2.5 text-[15px] text-slate-600">
                   <MapPin size={17} className="shrink-0 text-rose-500" />
@@ -539,7 +545,7 @@ export default function BookingFlow({ org, services }) {
                 )}
                 {day && parts.map((p) => (
                   <div key={p.label} className={p.near ? "mb-5 rounded-2xl bg-rose-50/70 p-3 ring-1 ring-rose-100" : "mb-4"}>
-                    <div className={`mb-2 flex items-center gap-1.5 text-sm font-semibold ${p.near ? "text-rose-600" : "text-slate-500"}`}><p.icon size={16} />{p.label}</div>
+                    <div className={`mb-2 flex items-center gap-1.5 text-sm font-semibold ${p.near ? "text-rose-600" : "text-slate-500"}`}><p.icon size={16} />{p.label}{org.windowed && <span className="font-normal text-slate-400">· טווחי הגעה</span>}</div>
                     <div className={`grid gap-2 ${org.windowed ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4"}`}>
                       {p.items.map((s, i) => (
                         <button key={s.start} onClick={() => setSlot(s)} aria-pressed={slot?.start === s.start} style={{ animationDelay: `${i * 25}ms` }}
@@ -556,7 +562,7 @@ export default function BookingFlow({ org, services }) {
 
               <div className="mt-6 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
                 <button onClick={() => go(service.questions?.length ? 1 : 0)} className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-500 transition hover:text-rose-600"><ArrowRight size={18} />חזרה</button>
-                {!needsPlace && <NextBtn disabled={!slot} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${slotLabel({ ...slot, window: org.windowed })}` : "בחרו שעה"}</NextBtn>}
+                {!needsPlace && <NextBtn disabled={!slot} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${org.windowed ? "הגעה " : ""}${slotLabel({ ...slot, window: org.windowed })}` : org.windowed ? "בחרו טווח הגעה" : "בחרו שעה"}</NextBtn>}
               </div>
             </>
           )}
@@ -571,7 +577,7 @@ export default function BookingFlow({ org, services }) {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-base font-bold text-slate-900">{service.name}</div>
-                  <div className="text-sm text-slate-600">{fmtDay(localParts(slot.start).day)} · <bdi dir="ltr">{fmtTime(slot.start)}–{fmtTime(slot.end)}</bdi></div>
+                  <div className="text-sm text-slate-600">{fmtDay(localParts(slot.start).day)} · {org.windowed && "הגעה בין "}<bdi dir="ltr">{fmtTime(slot.start)}–{fmtTime(slot.end)}</bdi></div>
                 </div>
                 <button onClick={() => go(2)} className="text-sm font-semibold text-rose-600 hover:underline">שינוי</button>
               </div>
@@ -617,7 +623,7 @@ export default function BookingFlow({ org, services }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="text-lg font-bold text-slate-900">{result.service}</div>
-                    <div className="text-[15px] text-slate-600">{fmtDay(localParts(result.starts_at).day)} · <bdi dir="ltr">{fmtTime(result.starts_at)}–{fmtTime(result.ends_at)}</bdi></div>
+                    <div className="text-[15px] text-slate-600">{fmtDay(localParts(result.starts_at).day)} · {org.windowed && slot ? <>הגעה בין <bdi dir="ltr">{fmtTime(slot.start)}–{fmtTime(slot.end)}</bdi></> : <bdi dir="ltr">{fmtTime(result.starts_at)}–{fmtTime(result.ends_at)}</bdi>}</div>
                     <div className="mt-0.5 flex items-center gap-1 text-sm text-slate-500"><MapPin size={14} />{form.address}</div>
                   </div>
                   <div className="text-lg font-bold tabular-nums text-slate-900">{ils(result.price)}</div>
