@@ -57,6 +57,14 @@ function NextBtn({ children, disabled, onClick, busy }) {
   );
 }
 
+function MinNote({ min, gap, dark }) {
+  return (
+    <div className={`mt-3 flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold ${dark ? "bg-amber-400/15 text-amber-200" : "bg-amber-50 text-amber-800 ring-1 ring-amber-100"}`}>
+      <CircleAlert size={16} className="shrink-0" />מינימום הזמנה {ils(min)}. חסרים עוד {ils(gap)}.
+    </div>
+  );
+}
+
 function QuoteBar({ service, answers }) {
   const q = quote(service, answers);
   return (
@@ -190,6 +198,10 @@ export default function BookingFlow({ org, services }) {
   const needsPlace = geo && !place && !geoSkip;
 
   const needsAnswers = (service?.questions ?? []).filter((q) => q.required && !String(answers[q.id] ?? "").trim());
+  // Minimum order: the booking page can't send anything cheaper
+  const minPrice = Number(org.min_price) || 0;
+  const missing = (price) => Math.max(0, minPrice - price);
+  const belowMin = service ? missing(quote(service, answers).price) : 0;
   const go = (n) => { setError(""); setStep(n); window.scrollTo({ top: 0, behavior: "smooth" }); };
 
   // Free slots for the chosen service (duration depends on the answers)
@@ -272,6 +284,7 @@ export default function BookingFlow({ org, services }) {
       setError("אופס, מישהו הזמין את השעה הזו ממש עכשיו. בחרו בבקשה שעה אחרת.");
       return;
     }
+    if (body?.error === "below_minimum") { setError(`מינימום הזמנה הוא ${ils(minPrice)}. הוסיפו עוד שירות כדי להמשיך.`); return; }
     setError(body?.error === "invalid" ? "חלק מהפרטים לא תקינים, בדקו את הטלפון והמייל." : "משהו השתבש בשליחה. נסו שוב בעוד רגע.");
   };
 
@@ -388,7 +401,7 @@ export default function BookingFlow({ org, services }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="text-[15px] font-bold">סל השירותים</div>
-                    <div className="text-sm text-white/70">{cartLines.length ? `${cartLines.reduce((t, l) => t + l.qty, 0)} פריטים · ${minutesLabel(cartTotal.minutes)}` : "לחצו + כדי להוסיף לסל"}</div>
+                    <div className="text-sm text-white/70">{cartLines.length ? `${cartLines.reduce((t, l) => t + l.qty, 0)} פריטים · ${minutesLabel(cartTotal.minutes)}` : `לחצו + כדי להוסיף לסל${minPrice ? ` · מינימום ${ils(minPrice)}` : ""}`}</div>
                   </div>
                   <button type="button" onClick={toggleMute} aria-label={muted ? "הפעלת צלילים" : "השתקת צלילים"} aria-pressed={!muted}
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white">
@@ -398,7 +411,8 @@ export default function BookingFlow({ org, services }) {
                 {cartLines.length > 0 && (
                   <>
                     <div className="mt-3 line-clamp-2 text-[15px] font-semibold">{cartTitle(cartLines)}</div>
-                    <button onClick={startCart} disabled={cartTotal.minutes > 16 * 60}
+                    {missing(cartTotal.price) > 0 && <MinNote min={minPrice} gap={missing(cartTotal.price)} dark />}
+                    <button onClick={startCart} disabled={cartTotal.minutes > 16 * 60 || missing(cartTotal.price) > 0}
                       className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-rose-500 to-pink-500 text-base font-bold shadow-lg transition active:scale-[0.98] disabled:opacity-50">
                       <span key={cartTotal.price} className="animate-pop-in tabular-nums">{ils(cartTotal.price)}</span> · לבחירת מועד<ArrowLeft size={19} />
                     </button>
@@ -472,10 +486,11 @@ export default function BookingFlow({ org, services }) {
               <div className={`mt-7 rounded-2xl ${c.soft} p-4`}>
                 <div className="mb-2 text-sm font-semibold text-slate-600">הערכה לפי התשובות</div>
                 <QuoteBar service={service} answers={answers} />
+                {belowMin > 0 && <MinNote min={minPrice} gap={belowMin} />}
               </div>
               <div className="mt-7 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
                 <button onClick={() => go(0)} className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-500 transition hover:text-rose-600"><ArrowRight size={18} />חזרה</button>
-                <NextBtn disabled={needsAnswers.length > 0} onClick={() => go(2)}>לבחירת מועד</NextBtn>
+                <NextBtn disabled={needsAnswers.length > 0 || belowMin > 0} onClick={() => go(2)}>לבחירת מועד</NextBtn>
               </div>
             </>
           )}
@@ -484,6 +499,7 @@ export default function BookingFlow({ org, services }) {
             <>
               <h2 className="text-2xl font-bold text-slate-900">{needsPlace ? "לאן מגיעים?" : "מתי נוח לכם?"}</h2>
               <div className="mt-2"><QuoteBar service={service} answers={answers} /></div>
+              {belowMin > 0 && <MinNote min={minPrice} gap={belowMin} />}
 
               {needsPlace && (
                 <form className="mt-6 flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); if (where.trim().length >= 3 && !geoBusy) locate(); }}>
@@ -562,7 +578,7 @@ export default function BookingFlow({ org, services }) {
 
               <div className="mt-6 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
                 <button onClick={() => go(service.questions?.length ? 1 : 0)} className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-500 transition hover:text-rose-600"><ArrowRight size={18} />חזרה</button>
-                {!needsPlace && <NextBtn disabled={!slot} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${org.windowed ? "הגעה " : ""}${slotLabel({ ...slot, window: org.windowed })}` : org.windowed ? "בחרו טווח הגעה" : "בחרו שעה"}</NextBtn>}
+                {!needsPlace && <NextBtn disabled={!slot || belowMin > 0} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${org.windowed ? "הגעה " : ""}${slotLabel({ ...slot, window: org.windowed })}` : org.windowed ? "בחרו טווח הגעה" : "בחרו שעה"}</NextBtn>}
               </div>
             </>
           )}
