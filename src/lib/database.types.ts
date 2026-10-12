@@ -26,6 +26,7 @@ type Organization = {
   booking_max_days: number
   booking_windows: Json
   booking_max_km: number | null
+  booking_logo: string | null
 }
 
 type Lead = {
@@ -83,6 +84,7 @@ type Service = {
   position: number
   price: number
   questions: Json
+  category: string | null
   updated_at: string
 }
 

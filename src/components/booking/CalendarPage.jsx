@@ -479,7 +479,7 @@ export function JobChip({ job }) {
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240];
 const newQuestionId = () => `q${crypto.randomUUID().slice(0, 8)}`;
 
-function ServiceModal({ service, onClose, onSave, onDelete }) {
+function ServiceModal({ service, categories, onClose, onSave, onDelete }) {
   const [s, setS] = useState(() => ({ ...service, questions: (service.questions || []).map((q) => ({ ...q, options: q.options || [] })) }));
   const setQ = (i, patch) => setS({ ...s, questions: s.questions.map((q, j) => (j === i ? { ...q, ...patch } : q)) });
   const addQ = (type) => setS({ ...s, questions: [...s.questions, { id: newQuestionId(), label: type === "number" ? "כמה יחידות?" : type === "select" ? "בחירה" : "שאלה", type, required: true, min: 1, max: 10, extra_minutes: 0, extra_price: 0, options: type === "select" ? ["אפשרות 1", "אפשרות 2"] : [] }] });
@@ -509,6 +509,13 @@ function ServiceModal({ service, onClose, onSave, onDelete }) {
             </select>
           </Field>
           <Field label="מחיר (₪)"><input type="number" min="0" className={inputCls} value={s.price} onChange={(e) => setS({ ...s, price: e.target.value })} /></Field>
+        </div>
+        <div className="sm:col-span-2">
+          <Field label="קבוצה (לא חובה)">
+            <input className={inputCls} list="service-categories" maxLength={40} value={s.category ?? ""} onChange={(e) => setS({ ...s, category: e.target.value })} placeholder="לדוגמה: ניקוי מזגנים" />
+            <datalist id="service-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
+          </Field>
+          <p className="mt-1 text-xs text-slate-500">כשיש שתי קבוצות או יותר, הלקוח בוחר קודם קבוצה (או את כולן), ורואה רק את השירותים שלה.</p>
         </div>
         <div className="sm:col-span-2"><Field label="תיאור קצר (מוצג ללקוח)"><input className={inputCls} value={s.description ?? ""} onChange={(e) => setS({ ...s, description: e.target.value })} /></Field></div>
         <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
@@ -585,7 +592,7 @@ function ServicesTab({ org, db, isAdmin, notify, fail, patchOrg }) {
   const blank = { name: "", description: "", duration_minutes: 60, price: 0, color: "rose", questions: [], is_active: true };
 
   const save = async (s) => {
-    const row = { name: s.name, description: s.description || null, duration_minutes: s.duration_minutes, price: s.price, color: s.color, questions: s.questions, is_active: s.is_active };
+    const row = { name: s.name, description: s.description || null, category: s.category?.trim() || null, duration_minutes: s.duration_minutes, price: s.price, color: s.color, questions: s.questions, is_active: s.is_active };
     const { data, error } = s.id
       ? await db.from("services").update(row).eq("id", s.id).select().single()
       : await db.from("services").insert({ ...row, org_id: org.id, position: org.services.length }).select().single();
@@ -665,7 +672,7 @@ function ServicesTab({ org, db, isAdmin, notify, fail, patchOrg }) {
           )}
         </div>
       )}
-      {editing && <ServiceModal key={editing.id ?? "new"} service={editing} onClose={() => setEditing(null)} onSave={save} onDelete={remove} />}
+      {editing && <ServiceModal key={editing.id ?? "new"} service={editing} categories={[...new Set(org.services.map((x) => x.category).filter(Boolean))]} onClose={() => setEditing(null)} onSave={save} onDelete={remove} />}
     </div>
   );
 }
@@ -845,6 +852,55 @@ export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
 /*  Booking page link + Google Calendar                                */
 /* ------------------------------------------------------------------ */
 
+// Shrinks the image in the browser (max 320px, WebP) so it fits in the org row
+const shrinkImage = (file) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => {
+    const scale = Math.min(1, 320 / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(img.src);
+    const webp = canvas.toDataURL("image/webp", 0.9);
+    resolve(webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/png"));
+  };
+  img.onerror = reject;
+  img.src = URL.createObjectURL(file);
+});
+
+function LogoField({ org, isAdmin, fail, onSave }) {
+  const [busy, setBusy] = useState(false);
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    try { await onSave(await shrinkImage(file)); } catch (err) { fail(err, "לא הצלחנו לקרוא את התמונה"); }
+    setBusy(false);
+  };
+  return (
+    <Field label="לוגו בדף ההזמנה">
+      <div className="flex items-center gap-3">
+        <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+          {/* eslint-disable-next-line @next/next/no-img-element -- data: URL */}
+          {org.booking.logo ? <img src={org.booking.logo} alt="" className="h-full w-full object-contain" /> : <span className="text-2xl font-bold text-slate-300">{org.name[0]}</span>}
+        </span>
+        {isAdmin && (
+          <div className="flex flex-wrap gap-2">
+            <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:text-rose-600 ${busy ? "pointer-events-none opacity-60" : ""}`}>
+              {org.booking.logo ? "החלפת לוגו" : "העלאת לוגו"}
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={pick} />
+            </label>
+            {org.booking.logo && <button type="button" onClick={() => onSave(null)} className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-red-50 hover:text-red-600">הסרה</button>}
+          </div>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-slate-500">הלוגו מוצג במקום שם העסק בראש הדף.</p>
+    </Field>
+  );
+}
+
 function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, providers }) {
   const url = `${siteUrl.replace(/\/$/, "")}/book/${org.slug}`;
   const [headline, setHeadline] = useState(org.booking.headline);
@@ -869,6 +925,7 @@ function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, pro
         <div className="mt-4 flex flex-col gap-3">
           <Toggle checked={org.booking.enabled} disabled={!isAdmin} onChange={(v) => update({ booking_enabled: v }, { enabled: v })}
             icon={Globe} title="הדף פתוח להזמנות" text={org.booking.enabled ? "לקוחות יכולים לקבוע תורים עכשיו" : "הדף מוסתר, הקישור מחזיר ״לא נמצא״"} />
+          <LogoField org={org} isAdmin={isAdmin} fail={fail} onSave={(logo) => update({ booking_logo: logo }, { logo })} />
           <Field label="כותרת משנה בדף">
             <div className="flex gap-2">
               <input className={inputCls} value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="לדוגמה: ניקוי מקצועי עד הבית, בלי לכלוך" disabled={!isAdmin} maxLength={160} />

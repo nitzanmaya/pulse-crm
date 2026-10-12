@@ -67,8 +67,24 @@ function QuoteBar({ service, answers }) {
   );
 }
 
+// "ניקוי מזגנים" + "ניקוי ספות" -> "ניקוי מזגנים + ספות"
+function comboLabel(groups) {
+  const first = groups.map((g) => g.split(" ")[0]);
+  if (groups.every((g) => g.includes(" ")) && first.every((w) => w === first[0])) {
+    return `${groups[0]} + ${groups.slice(1).map((g) => g.slice(first[0].length + 1)).join(" + ")}`;
+  }
+  return groups.join(" + ");
+}
+
 export default function BookingFlow({ org, services }) {
   const [db] = useState(createClient);
+  // Service groups: with two or more, the customer picks a group (or all) first
+  const groups = useMemo(() => [...new Set(services.map((s) => s.category?.trim()).filter(Boolean))], [services]);
+  const grouped = groups.length >= 2;
+  const [group, setGroup] = useState(null); // null = not chosen yet, "*" = all
+  const shown = grouped && group && group !== "*" ? services.filter((s) => !s.category?.trim() || s.category.trim() === group) : services;
+  const otherGroups = grouped && group && group !== "*" ? groups.filter((g) => g !== group) : [];
+  const [hintOff, setHintOff] = useState(false);
   const [step, setStep] = useState(0);
   const [service, setService] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -172,7 +188,9 @@ export default function BookingFlow({ org, services }) {
     setError(body?.error === "invalid" ? "חלק מהפרטים לא תקינים, בדקו את הטלפון והמייל." : "משהו השתבש בשליחה. נסו שוב בעוד רגע.");
   };
 
-  const reset = () => { setService(null); setAnswers({}); setSlot(null); setSlots(null); setResult(null); setForm({ name: "", phone: "", address: "", email: "", notes: "" }); setPlace(null); setWhere(""); setGeoSkip(false); setGeoMisses(0); go(0); };
+  const reset = () => { setService(null); setAnswers({}); setSlot(null); setSlots(null); setResult(null); setForm({ name: "", phone: "", address: "", email: "", notes: "" }); setPlace(null); setWhere(""); setGeoSkip(false); setGeoMisses(0); setGroup(null); go(0); };
+  // Book the other group right after: same customer, same address
+  const bookAlso = (g) => { setService(null); setAnswers({}); setSlot(null); setSlots(null); setResult(null); setGroup(g); setHintOff(true); go(0); };
   const c = serviceColor(service?.color);
 
   return (
@@ -182,8 +200,18 @@ export default function BookingFlow({ org, services }) {
 
       <div className="relative mx-auto w-full max-w-2xl">
         <header className="mb-7 flex animate-fade-up flex-col items-center text-center">
-          <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-rose-500 to-pink-500 text-2xl font-bold text-white shadow-xl shadow-rose-500/30">{org.name[0]}</span>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{org.name}</h1>
+          {org.logo ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- data: URL from the org row */}
+              <img src={org.logo} alt={org.name} className="h-28 w-28 rounded-full object-contain shadow-xl shadow-slate-900/20 sm:h-32 sm:w-32" />
+              <h1 className="sr-only">{org.name}</h1>
+            </>
+          ) : (
+            <>
+              <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-rose-500 to-pink-500 text-2xl font-bold text-white shadow-xl shadow-rose-500/30">{org.name[0]}</span>
+              <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{org.name}</h1>
+            </>
+          )}
           <p className="mt-1.5 max-w-md text-base text-slate-500">{org.headline || "קביעת תור אונליין, בכמה קליקים"}</p>
         </header>
 
@@ -193,14 +221,40 @@ export default function BookingFlow({ org, services }) {
           {error && (
             <div role="alert" className="mb-5 flex items-start gap-2 rounded-2xl bg-red-50 px-4 py-3 text-[15px] font-medium text-red-700"><CircleAlert size={19} className="mt-0.5 shrink-0" />{error}</div>
           )}
+          {otherGroups.length > 0 && !hintOff && step < 4 && (
+            <div className="mb-5 flex animate-fade-up items-center gap-2.5 rounded-2xl bg-gradient-to-l from-amber-50 to-rose-50 px-4 py-2.5 text-[15px] text-slate-700 ring-1 ring-amber-100">
+              <Sparkles size={18} className="shrink-0 text-amber-500" />
+              <span className="min-w-0 flex-1"><span className="font-semibold">יש גם {otherGroups.join(" ו")}!</span>{step === 0 ? "" : " אפשר לקבוע גם אותו מיד אחרי התור הזה."}</span>
+              {step === 0 && <button type="button" onClick={() => setGroup("*")} className="shrink-0 font-semibold text-rose-600 hover:underline">להציג הכל</button>}
+              <button type="button" onClick={() => setHintOff(true)} aria-label="סגירה" className="shrink-0 rounded-full p-1 text-slate-400 hover:bg-white hover:text-slate-600">✕</button>
+            </div>
+          )}
 
-          {step === 0 && (
+          {step === 0 && grouped && !group && (
             <>
+              <h2 className="text-2xl font-bold text-slate-900">במה נוכל לעזור?</h2>
+              <p className="mt-1 text-base text-slate-500">בחרו מה לנקות, ונראה לכם את השירותים המתאימים.</p>
+              <div className="mt-6 flex flex-col gap-3">
+                {[...groups.map((g) => ({ id: g, label: g })), { id: "*", label: comboLabel(groups) }].map((g, i) => (
+                  <button key={g.id} onClick={() => setGroup(g.id)} style={{ animationDelay: `${i * 70}ms` }}
+                    className="group flex animate-fade-up items-center gap-4 rounded-3xl border-2 border-slate-100 bg-white p-5 text-start shadow-sm transition duration-300 hover:-translate-y-0.5 hover:border-rose-200 hover:shadow-xl active:scale-[0.98]">
+                    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${g.id === "*" ? "from-amber-400 to-rose-500" : i % 2 ? "from-violet-500 to-fuchsia-500" : "from-sky-500 to-blue-600"} text-white shadow-md transition group-hover:-rotate-6 group-hover:scale-110`}><Sparkles size={22} /></span>
+                    <span className="flex-1 text-lg font-bold text-slate-900">{g.label}</span>
+                    <ChevronLeft size={22} className="text-slate-300 transition group-hover:-translate-x-1 group-hover:text-rose-500" />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {step === 0 && (!grouped || group) && (
+            <>
+              {grouped && <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{group === "*" ? comboLabel(groups) : group}</button>}
               <h2 className="text-2xl font-bold text-slate-900">איזה שירות תרצו להזמין?</h2>
               <p className="mt-1 text-base text-slate-500">בחרו שירות, ובשלב הבא נשאל כמה שאלות קצרות.</p>
-              {services.length === 0 && <p className="mt-6 rounded-2xl bg-amber-50 px-4 py-3 text-amber-700">אין כרגע שירותים פתוחים להזמנה. נסו שוב מאוחר יותר.</p>}
+              {shown.length === 0 && <p className="mt-6 rounded-2xl bg-amber-50 px-4 py-3 text-amber-700">אין כרגע שירותים פתוחים להזמנה. נסו שוב מאוחר יותר.</p>}
               <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {services.map((s, i) => {
+                {shown.map((s, i) => {
                   const sc = serviceColor(s.color);
                   return (
                     <button key={s.id} onClick={() => pickService(s)} style={{ animationDelay: `${i * 70}ms` }}
@@ -430,6 +484,15 @@ export default function BookingFlow({ org, services }) {
                   </li>
                 )}
               </ul>
+
+              {otherGroups.length > 0 && (
+                <button onClick={() => bookAlso(otherGroups[0])}
+                  className="mt-6 flex w-full animate-fade-up items-center gap-3 rounded-2xl bg-gradient-to-l from-amber-50 to-rose-50 px-4 py-3.5 text-start ring-1 ring-amber-100 transition hover:-translate-y-0.5 hover:shadow-md" style={{ animationDelay: "420ms" }}>
+                  <Sparkles size={20} className="shrink-0 text-amber-500" />
+                  <span className="flex-1 text-[15px] text-slate-700"><span className="font-bold">יש גם {otherGroups[0]}!</span> לקבוע עכשיו, עם אותם פרטים?</span>
+                  <ChevronLeft size={20} className="text-rose-500" />
+                </button>
+              )}
 
               <div className="mt-7 flex w-full flex-col gap-2.5 sm:flex-row">
                 <a href={googleCalendarLink(`${result.service} · ${org.name}`, result.starts_at, result.ends_at, form.address)} target="_blank" rel="noreferrer"
