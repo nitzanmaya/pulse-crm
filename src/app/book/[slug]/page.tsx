@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import type { BookableService } from "@/lib/booking/shared"
 import BookingFlow from "@/components/booking/BookingFlow"
 
-type BookingPage = { org: { name: string; slug: string; headline: string | null; max_days: number; windowed: boolean; max_km: number | null; logo: string | null; phone: string | null; whatsapp: string | null; min_price: number | null }; services: BookableService[] }
+type BookingPage = { org: { name: string; slug: string; headline: string | null; max_days: number; windowed: boolean; max_km: number | null; logo: string | null; phone: string | null; whatsapp: string | null; min_price: number | null; note: string | null }; services: BookableService[] }
 
 async function load(slug: string) {
   const supabase = await createClient()

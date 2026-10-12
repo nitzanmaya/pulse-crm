@@ -334,6 +334,12 @@ export default function BookingFlow({ org, services }) {
             <>
               <h2 className="text-2xl font-bold text-slate-900">במה נוכל לעזור?</h2>
               <p className="mt-1 text-base text-slate-500">בחרו מה לנקות, ונראה לכם את השירותים המתאימים.</p>
+              {org.note && (
+                <div className="mt-4 flex items-start gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 text-[15px] leading-relaxed text-amber-900 ring-1 ring-amber-100">
+                  <CircleAlert size={18} className="mt-0.5 shrink-0 text-amber-500" />
+                  <span className="whitespace-pre-line">{org.note}</span>
+                </div>
+              )}
               <div className="mt-6 flex flex-col gap-3">
                 {[...groups.map((g) => ({ id: g, label: g })), { id: "*", label: comboLabel(groups) }].map((g, i) => (
                   <button key={g.id} onClick={() => setGroup(g.id)} style={{ animationDelay: `${i * 70}ms` }}
@@ -352,6 +358,12 @@ export default function BookingFlow({ org, services }) {
               <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{group === "*" ? comboLabel(groups) : group}</button>
               <h2 className="text-2xl font-bold text-slate-900">מה מנקים הפעם?</h2>
               <p className="mt-1 text-base text-slate-500">הוסיפו לסל כל מה שצריך לביקור אחד, בכל כמות.</p>
+              {org.note && (
+                <div className="mt-4 flex items-start gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 text-[15px] leading-relaxed text-amber-900 ring-1 ring-amber-100">
+                  <CircleAlert size={18} className="mt-0.5 shrink-0 text-amber-500" />
+                  <span className="whitespace-pre-line">{org.note}</span>
+                </div>
+              )}
               {cartShown.map((g) => {
                 const list = services.filter((s) => (g ? s.category?.trim() === g : !s.category?.trim()));
                 if (!list.length) return null;
@@ -427,6 +439,12 @@ export default function BookingFlow({ org, services }) {
               {grouped && <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{group === "*" ? comboLabel(groups) : group}</button>}
               <h2 className="text-2xl font-bold text-slate-900">איזה שירות תרצו להזמין?</h2>
               <p className="mt-1 text-base text-slate-500">בחרו שירות, ובשלב הבא נשאל כמה שאלות קצרות.</p>
+              {org.note && (
+                <div className="mt-4 flex items-start gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 text-[15px] leading-relaxed text-amber-900 ring-1 ring-amber-100">
+                  <CircleAlert size={18} className="mt-0.5 shrink-0 text-amber-500" />
+                  <span className="whitespace-pre-line">{org.note}</span>
+                </div>
+              )}
               {shown.length === 0 && <p className="mt-6 rounded-2xl bg-amber-50 px-4 py-3 text-amber-700">אין כרגע שירותים פתוחים להזמנה. נסו שוב מאוחר יותר.</p>}
               <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {shown.map((s, i) => {

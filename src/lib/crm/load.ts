@@ -50,6 +50,8 @@ export type UiBooking = {
   whatsapp: string
   // Lowest order total the booking page accepts; null = no minimum
   minPrice: number | null
+  // Note shown on the service step of the booking page
+  note: string
 }
 
 export type UiOrg = {
@@ -216,6 +218,7 @@ export async function loadOrgs(supabase: SupabaseClient<Database>, userId: strin
         logo: org.booking_logo,
         phone: org.booking_phone ?? "",
         whatsapp: org.booking_whatsapp ?? "",
+        note: org.booking_note ?? "",
         minPrice: org.booking_min_price === null ? null : Number(org.booking_min_price),
       },
       services: (servicesRes.data ?? []).filter((x) => x.org_id === org.id),
