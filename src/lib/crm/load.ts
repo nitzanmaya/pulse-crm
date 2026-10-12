@@ -43,6 +43,8 @@ export type UiBooking = {
   windows: { start: string; end: string }[]
   // Max straight-line km between same-day visits; null = no limit
   maxKm: number | null
+  // Data URL shown instead of the business name on the booking page
+  logo: string | null
 }
 
 export type UiOrg = {
@@ -206,6 +208,7 @@ export async function loadOrgs(supabase: SupabaseClient<Database>, userId: strin
         maxDays: org.booking_max_days,
         windows: Array.isArray(org.booking_windows) ? (org.booking_windows as { start: string; end: string }[]) : [],
         maxKm: org.booking_max_km,
+        logo: org.booking_logo,
       },
       services: (servicesRes.data ?? []).filter((x) => x.org_id === org.id),
       rules: (rulesRes.data ?? []).filter((x) => x.org_id === org.id).map(({ weekday, start_time, end_time }) => ({ weekday, start_time, end_time })),

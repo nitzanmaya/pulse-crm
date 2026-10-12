@@ -23,6 +23,7 @@ export type BookableService = {
   price: number
   color?: string
   questions: ServiceQuestion[]
+  category?: string | null
 }
 
 export type Answers = Record<string, string>
