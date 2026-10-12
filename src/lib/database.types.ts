@@ -3,7 +3,7 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
 type MemberRole = "admin" | "agent" | "viewer"
-type LeadStage = "new" | "in_progress" | "proposal" | "won" | "lost"
+type LeadStage = "new" | "in_progress" | "proposal" | "awaiting_visit" | "won" | "lost"
 
 type Organization = {
   created_at: string
@@ -438,5 +438,5 @@ export type Database = {
 export type Tables<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Row"]
 export type Enums<T extends keyof Database["public"]["Enums"]> = Database["public"]["Enums"][T]
 
-export const LEAD_STAGES = ["new", "in_progress", "proposal", "won", "lost"] as const satisfies readonly LeadStage[]
+export const LEAD_STAGES = ["new", "in_progress", "proposal", "awaiting_visit", "won", "lost"] as const satisfies readonly LeadStage[]
 export const MEMBER_ROLES = ["admin", "agent", "viewer"] as const satisfies readonly MemberRole[]

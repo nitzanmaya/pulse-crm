@@ -13,7 +13,7 @@ import {
   Search, Bell, X, Mail, ShieldCheck, UserPlus, TrendingUp, TrendingDown, Wallet, Target,
   Clock, Tag, Phone, Building2, Cookie, Accessibility, Trash2, Calendar, Sparkles, LogOut,
   Menu, Activity, Type, Contrast, GripVertical, Send, Globe, Percent, Heart, ArrowLeft,
-  Cake, BellRing, Wrench, CalendarCheck, CalendarDays, Zap, Bot,
+  Cake, BellRing, Wrench, CalendarCheck, CalendarDays, Zap, Bot, ChevronLeft,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -26,6 +26,7 @@ const STAGES = [
   { id: "new", label: "לידים חדשים", dot: "bg-sky-500", soft: "bg-sky-50", text: "text-sky-700", edge: "border-s-sky-400" },
   { id: "in_progress", label: "בטיפול", dot: "bg-amber-500", soft: "bg-amber-50", text: "text-amber-700", edge: "border-s-amber-400" },
   { id: "proposal", label: "הצעת מחיר", dot: "bg-violet-500", soft: "bg-violet-50", text: "text-violet-700", edge: "border-s-violet-400" },
+  { id: "awaiting_visit", label: "ממתין להגעת טכנאי", dot: "bg-cyan-500", soft: "bg-cyan-50", text: "text-cyan-700", edge: "border-s-cyan-400" },
   { id: "won", label: "עסקה נסגרה", dot: "bg-emerald-500", soft: "bg-emerald-50", text: "text-emerald-700", edge: "border-s-emerald-400" },
   { id: "lost", label: "הפסד", dot: "bg-slate-400", soft: "bg-slate-100", text: "text-slate-600", edge: "border-s-slate-300" },
 ];
@@ -181,7 +182,7 @@ const spotlight = (e) => {
 };
 const SPOT = "pointer-events-none absolute inset-0 opacity-0 transition duration-300 group-hover:opacity-100 bg-[radial-gradient(260px_circle_at_var(--mx)_var(--my),rgba(244,63,94,0.10),transparent_70%)]";
 
-function KpiCard({ icon: Icon, label, value, format = (n) => n, delta, hint, tone, delay = 0 }) {
+function KpiCard({ icon: Icon, label, value, format = (n) => n, delta, hint, tone, delay = 0, action }) {
   const up = delta == null || delta >= 0;
   const shown = useCountUp(value);
   return (
@@ -202,12 +203,18 @@ function KpiCard({ icon: Icon, label, value, format = (n) => n, delta, hint, ton
           </span>
         )}
         <span className="text-sm text-slate-500">{hint}</span>
+        {action && (
+          <button type="button" onClick={action.onClick} className="ms-auto inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 active:scale-95">
+            {action.label}<ChevronLeft size={14} />
+          </button>
+        )}
       </div>
     </Card>
   );
 }
 
-function Kpis({ leads }) {
+function Kpis({ leads, onOpen }) {
+  const [wonOpen, setWonOpen] = useState(false);
   const won = leads.filter((l) => l.stage === "won");
   const open = leads.filter(isOpen);
   const wonValue = won.reduce((s, l) => s + l.value, 0);
@@ -216,10 +223,28 @@ function Kpis({ leads }) {
   const avg = won.length ? Math.round(wonValue / won.length) : 0;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <KpiCard icon={Wallet} tone="from-emerald-400 to-teal-500" label="הכנסות שנסגרו" value={wonValue} format={ils} hint={`${won.length} עסקאות`} delay={0} />
+      <KpiCard icon={Wallet} tone="from-emerald-400 to-teal-500" label="הכנסות שנסגרו" value={wonValue} format={ils} hint={`${won.length} עסקאות`} delay={0}
+        action={won.length ? { label: "לצפייה בלידים", onClick: () => setWonOpen(true) } : null} />
       <KpiCard icon={Activity} tone="from-rose-400 to-pink-500" label="שווי צנרת פתוחה" value={pipeline} format={ils} hint={`${open.length} לידים פעילים`} delay={70} />
       <KpiCard icon={Percent} tone="from-violet-400 to-indigo-500" label="יחס המרה" value={conv} format={(n) => `${n}%`} hint="ליד לעסקה סגורה" delay={140} />
       <KpiCard icon={Target} tone="from-amber-400 to-orange-500" label="עסקה ממוצעת" value={avg} format={ils} hint="בעסקאות שנסגרו" delay={210} />
+      <Modal open={wonOpen} onClose={() => setWonOpen(false)} title={`עסקאות שנסגרו · ${ils(wonValue)}`} wide>
+        <ul className="divide-y divide-slate-100 px-2 py-2">
+          {[...won].sort((a, b) => (a.created < b.created ? 1 : -1)).map((l) => (
+            <li key={l.id}>
+              <button type="button" disabled={!onOpen} onClick={() => { setWonOpen(false); onOpen?.(l); }}
+                className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-start transition enabled:hover:bg-emerald-50/60">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><Wallet size={18} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-semibold text-slate-900">{l.name}</span>
+                  <span className="block truncate text-xs text-slate-500">{[l.contact, l.created.split("-").reverse().join("/")].filter(Boolean).join(" · ")}</span>
+                </span>
+                <span className="shrink-0 text-[15px] font-bold tabular-nums text-emerald-700">{ils(l.value)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Modal>
     </div>
   );
 }
@@ -385,7 +410,7 @@ function Kanban({ org, onMove, onOpen, onAdd, query, canEdit }) {
       </Card>
     )}
     <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-      <div ref={boardRef} className="grid min-w-[1080px] grid-cols-5 gap-3">
+      <div ref={boardRef} className="grid min-w-[1290px] grid-cols-6 gap-3">
         {STAGES.map((s) => {
           const items = leads.filter((l) => l.stage === s.id);
           const total = items.reduce((a, l) => a + l.value, 0);
@@ -634,7 +659,7 @@ function Dashboard({ org, onOpen, go, onAdd }) {
   return (
     <div className="flex flex-col gap-5">
       {org.leads.length === 0 && <Welcome name={org.name} onAdd={onAdd} go={go} />}
-      <Kpis leads={org.leads} />
+      <Kpis leads={org.leads} onOpen={onOpen} />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="animate-fade-up p-6 lg:col-span-2" style={{ animationDelay: "120ms" }}>
           <SectionTitle icon={Activity} action={
@@ -645,7 +670,7 @@ function Dashboard({ org, onOpen, go, onAdd }) {
           <div className="mt-5 flex h-3.5 gap-0.5 overflow-hidden rounded-full bg-slate-100">
             {byStage.map((s) => <div key={s.id} className={`${s.dot} transition-all duration-700`} style={{ width: `${(s.items.reduce((a, l) => a + l.value, 0) / total) * 100}%` }} />)}
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {byStage.map((s) => (
               <div key={s.id} className={`rounded-xl ${s.soft} p-3`}>
                 <div className={`flex items-center gap-1.5 text-sm font-medium ${s.text}`}><span className={`h-2 w-2 rounded-full ${s.dot}`} />{s.label}</div>
@@ -703,7 +728,7 @@ function Dashboard({ org, onOpen, go, onAdd }) {
 
 /* ---------------------------------- analytics --------------------------------- */
 
-function Analytics({ org }) {
+function Analytics({ org, onOpen }) {
   const now = new Date();
   const MONTHLY = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
@@ -717,7 +742,7 @@ function Analytics({ org }) {
   const agentMax = Math.max(1, ...perAgent.map((x) => x.won));
   return (
     <div className="flex flex-col gap-5">
-      <Kpis leads={org.leads} />
+      <Kpis leads={org.leads} onOpen={onOpen} />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="animate-fade-up p-6 lg:col-span-2">
           <SectionTitle icon={ChartColumn}>הכנסות חודשיות (₪)</SectionTitle>
@@ -1256,7 +1281,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
             {page === "calendar" && <CalendarPage key={`${org.id}-${calendarTab}`} {...moduleProps} initialTab={calendarTab} />}
             {page === "bot" && <BotAdminPage key={org.id} {...moduleProps} />}
             {page === "automations" && <AutomationsPage key={org.id} {...moduleProps} />}
-            {page === "analytics" && <Analytics org={org} />}
+            {page === "analytics" && <Analytics org={org} onOpen={setLead} />}
             {page === "team" && <Team org={org} onInvite={invite} onRole={changeRole} onRemove={removeMember} notify={notify} canManage={isAdmin} meId={userId} />}
             {page === "settings" && <OrgSettings key={org.id} org={org} onSave={saveOrg} canManage={isAdmin} />}
             </div>
