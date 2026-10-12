@@ -25,6 +25,7 @@ type Organization = {
   booking_min_notice_hours: number
   booking_max_days: number
   booking_windows: Json
+  booking_max_km: number | null
 }
 
 type Lead = {
@@ -101,6 +102,8 @@ type Appointment = {
   ends_at: string
   google_event_id: string | null
   id: string
+  lat: number | null
+  lng: number | null
   lead_id: string | null
   notes: string | null
   org_id: string
@@ -332,6 +335,27 @@ export type Database = {
       get_booking_slots: {
         Args: { _slug: string; _service: string; _answers?: Json; _from?: string | null; _days?: number }
         Returns: { slot_start: string; slot_end: string }[]
+      }
+      get_booking_slots_near: {
+        Args: { _slug: string; _service: string; _answers: Json; _from: string | null; _days: number; _lat: number | null; _lng: number | null }
+        Returns: { slot_start: string; slot_end: string; near: boolean }[]
+      }
+      book_appointment_geo: {
+        Args: {
+          _slug: string
+          _service: string
+          _starts_at: string
+          _answers: Json
+          _name: string
+          _phone: string
+          _email: string | null
+          _address: string | null
+          _notes: string | null
+          _source: string
+          _lat: number | null
+          _lng: number | null
+        }
+        Returns: Json
       }
       book_appointment: {
         Args: {

@@ -35,7 +35,7 @@ const serverDb = (): Db => createClient<Database>(env.supabaseUrl(), env.supabas
 const secret = () => env.cronSecret()
 
 // window: an arrival window (08:00-10:00) rather than an exact start time
-export type Slot = { start: string; end: string; window?: boolean }
+export type Slot = { start: string; end: string; window?: boolean; near?: boolean }
 export type EventDetails = {
   appointmentId?: string
   orgId: string
@@ -162,19 +162,23 @@ export async function getAvailableSlots(opts: {
   answers?: Answers
   date?: string
   days?: number
+  // Customer location: slots too far from that day's other visits are dropped
+  place?: { lat: number; lng: number }
   db?: Db
 }): Promise<Slot[]> {
   const db = opts.db ?? serverDb()
   const days = opts.date ? 1 : (opts.days ?? 14)
-  const { data, error } = await db.rpc("get_booking_slots", {
+  const { data, error } = await db.rpc("get_booking_slots_near", {
     _slug: opts.slug,
     _service: opts.serviceId,
     _answers: opts.answers ?? {},
     _from: opts.date ?? null,
     _days: days,
+    _lat: opts.place?.lat ?? null,
+    _lng: opts.place?.lng ?? null,
   })
   if (error) throw error
-  const slots = (data ?? []).map((s) => ({ start: s.slot_start, end: s.slot_end }))
+  const slots: Slot[] = (data ?? []).map((s) => ({ start: s.slot_start, end: s.slot_end, ...(s.near ? { near: true } : {}) }))
   if (!slots.length) return slots
 
   try {

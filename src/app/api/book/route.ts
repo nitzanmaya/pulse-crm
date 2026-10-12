@@ -15,9 +15,12 @@ type Body = {
   email?: string
   address?: string
   notes?: string
+  lat?: number
+  lng?: number
 }
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null)
 
 // Public booking: book_appointment validates the slot and enqueues the
 // confirmations, then we send them right away instead of waiting for the cron.
@@ -30,7 +33,11 @@ export async function POST(request: NextRequest) {
   )
 
   const supabase = createClient<Database>(env.supabaseUrl(), env.supabaseKey(), { auth: { persistSession: false } })
-  const { data, error } = await supabase.rpc("book_appointment", {
+  // With a location the slot must also pass the distance check, and the
+  // coordinates are saved for the next customer's check
+  const lat = num(body.lat)
+  const lng = lat === null ? null : num(body.lng)
+  const { data, error } = await supabase.rpc("book_appointment_geo", {
     _slug: str(body.slug, 48),
     _service: body.serviceId,
     _starts_at: body.startsAt,
@@ -41,11 +48,13 @@ export async function POST(request: NextRequest) {
     _address: str(body.address, 300) || null,
     _notes: str(body.notes, 1000) || null,
     _source: "booking_page",
+    _lat: lng === null ? null : lat,
+    _lng: lng,
   })
 
   if (error) {
     const code = error.hint === "slot_taken" ? "slot_taken" : error.code === "22023" ? "invalid" : error.code === "P0002" ? "not_found" : "failed"
-    if (code === "failed") console.error("book_appointment failed", error)
+    if (code === "failed") console.error("book_appointment_geo failed", error)
     return NextResponse.json({ error: code, message: code === "invalid" ? error.message : undefined }, { status: code === "failed" ? 500 : 409 })
   }
 
