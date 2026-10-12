@@ -666,13 +666,18 @@ function ServicesTab({ org, db, isAdmin, notify, fail, patchOrg }) {
 /*  Availability                                                       */
 /* ------------------------------------------------------------------ */
 
+const DEFAULT_WINDOWS = [["08:00", "10:00"], ["10:00", "12:00"], ["12:00", "14:00"], ["14:00", "16:00"], ["16:00", "18:00"]].map(([start, end]) => ({ start, end }));
+const addHours = (t, h) => { const [hh, mm] = t.split(":").map(Number); return `${String(Math.min(23, hh + h)).padStart(2, "0")}:${String(mm).padStart(2, "0")}`; };
+
 export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
   const [week, setWeek] = useState(() => Array.from({ length: 7 }, (_, d) => org.rules.filter((r) => r.weekday === d).map((r) => ({ start: hhmm(r.start_time), end: hhmm(r.end_time) }))));
   const [b, setB] = useState(org.booking);
   const [block, setBlock] = useState({ starts_on: todayKey(), ends_on: todayKey(), reason: "" });
   const [busy, setBusy] = useState(false);
   const setDay = (d, ranges) => setWeek(week.map((r, i) => (i === d ? ranges : r)));
-  const invalid = week.some((rs) => rs.some((r) => !r.start || !r.end || r.end <= r.start));
+  const windowed = b.windows.length > 0;
+  const setWindows = (windows) => setB({ ...b, windows });
+  const invalid = week.some((rs) => rs.some((r) => !r.start || !r.end || r.end <= r.start)) || b.windows.some((w) => !w.start || !w.end || w.end <= w.start);
 
   const save = async () => {
     setBusy(true);
@@ -682,6 +687,7 @@ export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
     const upd = await db.from("organizations").update({
       booking_slot_minutes: Number(b.slotMinutes), booking_buffer_minutes: Number(b.bufferMinutes),
       booking_min_notice_hours: Number(b.minNoticeHours), booking_max_days: Number(b.maxDays),
+      booking_windows: [...b.windows].sort((x, y) => (x.start < y.start ? -1 : 1)),
     }).eq("id", org.id).select("id").single();
     setBusy(false);
     const error = del.error || ins.error || upd.error;
@@ -743,7 +749,42 @@ export function AvailabilityTab({ org, db, isAdmin, notify, fail, patchOrg }) {
 
         <div className="mt-4 grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 sm:grid-cols-2">
           <div className="flex items-center gap-2 text-base font-semibold text-slate-800 sm:col-span-2"><Settings2 size={18} className="text-violet-500" />כללי הזמנה</div>
-          <Field label="מרווח בין תחילות תורים">{sel("slotMinutes", [15, 30, 45, 60], (v) => `כל ${minutesLabel(v)}`)}</Field>
+          <div className="sm:col-span-2">
+            <span className="mb-1.5 block text-sm font-semibold text-slate-700">איך הלקוח בוחר זמן</span>
+            <div role="radiogroup" className="grid grid-cols-2 gap-2">
+              {[
+                { on: false, title: "שעה מדויקת", text: "למשל 09:00, 09:30, 10:00" },
+                { on: true, title: "חלון הגעה", text: "למשל 08:00–10:00. לקוח אחד בכל חלון" },
+              ].map((o) => (
+                <button key={o.title} type="button" role="radio" aria-checked={windowed === o.on} disabled={!isAdmin}
+                  onClick={() => setWindows(o.on ? (windowed ? b.windows : DEFAULT_WINDOWS) : [])}
+                  className={`rounded-xl border-2 p-3 text-start transition disabled:opacity-60 ${windowed === o.on ? "border-rose-400 bg-rose-50" : "border-slate-200 bg-white hover:border-rose-200"}`}>
+                  <span className="block text-[15px] font-semibold text-slate-800">{o.title}</span>
+                  <span className="block text-sm text-slate-500">{o.text}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {windowed ? (
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <span className="text-sm font-semibold text-slate-700">חלונות ההגעה</span>
+              {b.windows.map((w, i) => (
+                <div key={i} className="flex animate-pop-in items-center gap-2">
+                  <input type="time" step={900} className={`${inputCls} w-32`} value={w.start} disabled={!isAdmin} onChange={(e) => setWindows(b.windows.map((x, j) => (j === i ? { ...x, start: e.target.value } : x)))} aria-label="תחילת החלון" />
+                  <span className="text-slate-400">–</span>
+                  <input type="time" step={900} className={`${inputCls} w-32 ${w.end <= w.start ? "border-red-300 ring-4 ring-red-50" : ""}`} value={w.end} disabled={!isAdmin} onChange={(e) => setWindows(b.windows.map((x, j) => (j === i ? { ...x, end: e.target.value } : x)))} aria-label="סוף החלון" />
+                  {isAdmin && b.windows.length > 1 && <button type="button" onClick={() => setWindows(b.windows.filter((_, j) => j !== i))} aria-label="הסרת חלון" className="rounded-lg p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-600"><X size={16} /></button>}
+                </div>
+              ))}
+              {isAdmin && b.windows.length < 24 && (
+                <button type="button" onClick={() => { const last = b.windows.at(-1)?.end ?? "08:00"; setWindows([...b.windows, { start: last, end: addHours(last, 2) }]); }}
+                  className="inline-flex w-fit items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"><Plus size={15} />חלון</button>
+              )}
+              <p className="text-sm text-slate-500">חלון מוצג ללקוחות רק ביום ובשעות שבהם העסק פתוח. עבודה ארוכה מהחלון תופסת גם את החלון הבא.</p>
+            </div>
+          ) : (
+            <Field label="מרווח בין תחילות תורים">{sel("slotMinutes", [15, 30, 45, 60], (v) => `כל ${minutesLabel(v)}`)}</Field>
+          )}
           <Field label="זמן מעבר בין תורים">{sel("bufferMinutes", [0, 10, 15, 30, 45, 60], (v) => (v ? minutesLabel(v) : "ללא"))}</Field>
           <Field label="הזמנה מוקדמת לפחות">{sel("minNoticeHours", [0, 2, 4, 12, 24, 48], (v) => (v ? `${v} שעות מראש` : "אפשר גם לעכשיו"))}</Field>
           <Field label="אפשר להזמין עד">{sel("maxDays", [7, 14, 30, 60, 90], (v) => `${v} ימים קדימה`)}</Field>

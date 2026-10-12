@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
-  quote, localParts, fmtTime, fmtDay, todayKey, addDays, minutesLabel, serviceColor, googleCalendarLink, WEEKDAYS_SHORT, dowOf,
+  quote, localParts, fmtTime, fmtDay, slotLabel, todayKey, addDays, minutesLabel, serviceColor, googleCalendarLink, WEEKDAYS_SHORT, dowOf,
 } from "@/lib/booking/shared";
 
 const ils = (n) => new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(n);
@@ -271,11 +271,11 @@ export default function BookingFlow({ org, services }) {
                 {day && parts.map((p) => (
                   <div key={p.label} className="mb-4">
                     <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-500"><p.icon size={16} />{p.label}</div>
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    <div className={`grid gap-2 ${org.windowed ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-4"}`}>
                       {p.items.map((s, i) => (
                         <button key={s.start} onClick={() => setSlot(s)} aria-pressed={slot?.start === s.start} style={{ animationDelay: `${i * 25}ms` }}
                           className={`h-12 animate-pop-in rounded-2xl border-2 text-base font-bold tabular-nums transition duration-200 active:scale-95 ${slot?.start === s.start ? "border-rose-400 bg-gradient-to-l from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/30" : "border-slate-100 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-rose-200 hover:shadow-md"}`}>
-                          {fmtTime(s.start)}
+                          <bdi dir="ltr">{slotLabel({ ...s, window: org.windowed })}</bdi>
                         </button>
                       ))}
                     </div>
@@ -285,7 +285,7 @@ export default function BookingFlow({ org, services }) {
 
               <div className="mt-6 flex flex-col-reverse items-center justify-between gap-3 sm:flex-row">
                 <button onClick={() => go(service.questions?.length ? 1 : 0)} className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-500 transition hover:text-rose-600"><ArrowRight size={18} />חזרה</button>
-                <NextBtn disabled={!slot} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${fmtTime(slot.start)}` : "בחרו שעה"}</NextBtn>
+                <NextBtn disabled={!slot} onClick={() => go(3)}>{slot ? `${fmtDay(localParts(slot.start).day, { weekday: "short", day: "numeric", month: "numeric" })} · ${slotLabel({ ...slot, window: org.windowed })}` : "בחרו שעה"}</NextBtn>
               </div>
             </>
           )}

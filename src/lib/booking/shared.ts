@@ -84,6 +84,10 @@ export const dowOf = (day: string) => {
 export const fmtTime = (iso: string | Date) =>
   new Intl.DateTimeFormat("he-IL", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso))
 
+// "09:30", or "08:00–10:00" for an arrival window
+export const slotLabel = (s: { start: string; end: string; window?: boolean }) =>
+  s.window ? `${fmtTime(s.start)}–${fmtTime(s.end)}` : fmtTime(s.start)
+
 export const fmtDate = (iso: string | Date, opts: Intl.DateTimeFormatOptions = { weekday: "long", day: "numeric", month: "long" }) =>
   new Intl.DateTimeFormat("he-IL", { timeZone: TZ, ...opts }).format(new Date(iso))
 

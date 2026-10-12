@@ -173,6 +173,8 @@ export type InboundMessage = {
   type: string
 }
 export type StatusUpdate = { id: string; status: string; error?: string }
+// A message the business sent from the WhatsApp Business app on its phone (coexistence)
+export type EchoMessage = { phoneNumberId: string; to: string; id: string; text: string }
 
 type WebhookBody = {
   entry?: {
@@ -190,14 +192,16 @@ type WebhookBody = {
           interactive?: { button_reply?: { id: string; title: string }; list_reply?: { id: string; title: string } }
         }[]
         statuses?: { id: string; status: string; errors?: { title?: string; message?: string }[] }[]
+        message_echoes?: { to: string; id: string; type: string; text?: { body?: string } }[]
       }
     }[]
   }[]
 }
 
-export function parseWebhook(body: unknown): { messages: InboundMessage[]; statuses: StatusUpdate[] } {
+export function parseWebhook(body: unknown): { messages: InboundMessage[]; statuses: StatusUpdate[]; echoes: EchoMessage[] } {
   const messages: InboundMessage[] = []
   const statuses: StatusUpdate[] = []
+  const echoes: EchoMessage[] = []
   for (const entry of (body as WebhookBody)?.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const v = change.value
@@ -218,7 +222,10 @@ export function parseWebhook(body: unknown): { messages: InboundMessage[]; statu
       for (const s of v.statuses ?? []) {
         statuses.push({ id: s.id, status: s.status, error: s.errors?.map((e) => e.message ?? e.title).join("; ") || undefined })
       }
+      for (const e of v.message_echoes ?? []) {
+        echoes.push({ phoneNumberId, to: e.to, id: e.id, text: e.text?.body ?? `[${e.type}]` })
+      }
     }
   }
-  return { messages, statuses }
+  return { messages, statuses, echoes }
 }

@@ -97,12 +97,12 @@ export default function WhatsAppSimulator({ org, db, bot = org.bot }) {
       getSlots: async (service, answers) => {
         if (!service.id.startsWith("demo-") && org.booking.enabled) {
           const { data, error } = await db.rpc("get_booking_slots", { _slug: org.slug, _service: service.id, _answers: answers, _days: 14 });
-          if (!error) return data.map((s) => ({ start: s.slot_start, end: s.slot_end }));
+          if (!error) return data.map((s) => ({ start: s.slot_start, end: s.slot_end, window: org.booking.windows.length > 0 }));
         }
         return demoSlots(org.rules, quote(service, answers).minutes);
       },
     },
-  }), [org.name, org.slug, org.booking.enabled, org.rules, services, db, bot]);
+  }), [org.name, org.slug, org.booking.enabled, org.booking.windows, org.rules, services, db, bot]);
 
   const [msgs, setMsgs] = useState([]);
   const [state, setState] = useState(null);

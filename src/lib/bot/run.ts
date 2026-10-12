@@ -11,7 +11,7 @@ import { env } from "@/lib/env"
 import { engineTurn, type Conversation, type ConversationMode, type ConversationState, type EngineContext, type Faq, type MenuItem } from "@/lib/bot/engine"
 import { botTexts } from "@/lib/bot/texts"
 import { getAvailableSlots, syncPendingAppointments } from "@/lib/calendar/google"
-import { botMessageText, markRead, sendWhatsAppPayload, toWhatsAppPayload, type InboundMessage, type StatusUpdate } from "@/lib/notify/whatsapp"
+import { botMessageText, markRead, sendWhatsAppPayload, toWhatsAppPayload, type EchoMessage, type InboundMessage, type StatusUpdate } from "@/lib/notify/whatsapp"
 
 type Db = SupabaseClient<Database>
 
@@ -26,6 +26,10 @@ type Ingest = {
   menu?: MenuItem[]
   services?: (BookableService & { price: number | string })[]
 }
+
+// After the owner answers from the phone, the bot stays quiet in that chat until
+// the owner has been silent this long; the customer's next message wakes it
+const PHONE_QUIET_MS = 12 * 60 * 60 * 1000
 
 const serverDb = (): Db => createClient<Database>(env.supabaseUrl(), env.supabaseKey(), { auth: { persistSession: false } })
 
@@ -51,6 +55,10 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
 
   const org = ing.org
   let conv = ing.conversation
+  const phoneReplyAt = (conv.context as { phone_reply_at?: string } | null)?.phone_reply_at
+  if (conv.mode === "manual_agent" && phoneReplyAt && Date.now() - Date.parse(phoneReplyAt) > PHONE_QUIET_MS) {
+    conv = { ...conv, mode: "bot", state: "WELCOME", context: {} }
+  }
   const services = (ing.services ?? []).map((s) => ({ ...s, price: Number(s.price) }))
 
   const ctx: EngineContext = {
@@ -63,7 +71,14 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
       orgName: org.name,
       customerName: conv.contact_name ?? msg.name,
       services: org.booking_enabled ? services : [],
-      getSlots: (service, answers) => getAvailableSlots({ db, slug: org.slug, orgId: org.id, serviceId: service.id, answers, days: 14 }),
+      getSlots: async (service, answers) => {
+        const [slots, page] = await Promise.all([
+          getAvailableSlots({ db, slug: org.slug, orgId: org.id, serviceId: service.id, answers, days: 14 }),
+          db.rpc("get_booking_page", { _slug: org.slug }),
+        ])
+        const windowed = Boolean((page.data as { org?: { windowed?: boolean } } | null)?.org?.windowed)
+        return windowed ? slots.map((s) => ({ ...s, window: true })) : slots
+      },
       book: async ({ service, answers, slot, address, email }) => {
         const { data: booked, error: bookError } = await db.rpc("book_appointment", {
           _slug: org.slug,
@@ -136,6 +151,15 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
     }
   }
   return { status: turn.state }
+}
+
+export async function handleEchoes(echoes: EchoMessage[]) {
+  if (!echoes.length) return
+  const db = serverDb()
+  for (const e of echoes) {
+    const { error } = await db.rpc("bot_record_echo", { _secret: env.cronSecret(), _phone_number_id: e.phoneNumberId, _wa_id: e.to, _wa_message_id: e.id, _body: e.text })
+    if (error) console.error("bot_record_echo failed", e.id, error)
+  }
 }
 
 export async function handleStatuses(statuses: StatusUpdate[]) {

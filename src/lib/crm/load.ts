@@ -39,6 +39,8 @@ export type UiBooking = {
   bufferMinutes: number
   minNoticeHours: number
   maxDays: number
+  // Arrival windows ("08:00"-"10:00"); empty = exact start times
+  windows: { start: string; end: string }[]
 }
 
 export type UiOrg = {
@@ -200,6 +202,7 @@ export async function loadOrgs(supabase: SupabaseClient<Database>, userId: strin
         bufferMinutes: org.booking_buffer_minutes,
         minNoticeHours: org.booking_min_notice_hours,
         maxDays: org.booking_max_days,
+        windows: Array.isArray(org.booking_windows) ? (org.booking_windows as { start: string; end: string }[]) : [],
       },
       services: (servicesRes.data ?? []).filter((x) => x.org_id === org.id),
       rules: (rulesRes.data ?? []).filter((x) => x.org_id === org.id).map(({ weekday, start_time, end_time }) => ({ weekday, start_time, end_time })),

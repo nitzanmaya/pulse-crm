@@ -1,10 +1,11 @@
 import { after, NextResponse, type NextRequest } from "next/server"
-import { handleInbound, handleStatuses } from "@/lib/bot/run"
+import { handleEchoes, handleInbound, handleStatuses } from "@/lib/bot/run"
 import { parseWebhook, verifySignature } from "@/lib/notify/whatsapp"
 
 // WhatsApp Business Cloud API webhook (Meta app -> WhatsApp -> Configuration).
 // Callback URL: https://<site>/api/whatsapp/webhook, verify token: WHATSAPP_VERIFY_TOKEN,
-// subscribed field: messages. Each business number is mapped to an org in the
+// subscribed fields: messages, and smb_message_echoes when the number also stays
+// on the WhatsApp Business app (coexistence). Each business number is mapped to an org in the
 // bot admin (bot_settings.whatsapp_phone_number_id).
 export const maxDuration = 30
 
@@ -33,11 +34,13 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "bad json" }, { status: 400 })
   }
-  const { messages, statuses } = parseWebhook(body)
+  const { messages, statuses, echoes } = parseWebhook(body)
 
   // Answer Meta right away; the bot works after the response is sent
   after(async () => {
     await handleStatuses(statuses).catch((e) => console.error("whatsapp statuses failed", e))
+    // The owner's phone replies first, so the bot doesn't answer over them
+    await handleEchoes(echoes).catch((e) => console.error("whatsapp echoes failed", e))
     for (const m of messages) {
       try {
         await handleInbound(m)

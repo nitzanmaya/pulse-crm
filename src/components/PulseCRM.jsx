@@ -1136,7 +1136,7 @@ export default function PulseCRM({ initialOrgs, userId, providers, siteUrl }) {
     const created = {
       id: data.id, slug: data.slug, name: data.name, plan: data.plan, domain: "", color: "from-emerald-400 to-teal-500", autoBirthday: true, autoService: true, replyEmail: "", myRole: "Owner",
       members: [{ ...me, role: "Owner", color: 0 }], leads: [],
-      booking: { enabled: data.booking_enabled, headline: "", slotMinutes: data.booking_slot_minutes, bufferMinutes: data.booking_buffer_minutes, minNoticeHours: data.booking_min_notice_hours, maxDays: data.booking_max_days },
+      booking: { enabled: data.booking_enabled, headline: "", slotMinutes: data.booking_slot_minutes, bufferMinutes: data.booking_buffer_minutes, minNoticeHours: data.booking_min_notice_hours, maxDays: data.booking_max_days, windows: [] },
       services: [], rules: rulesRes.data ?? [], blocks: [], appointments: [], automations: autoRes.data ?? [], jobs: [], calendars: [],
       bot: { settings: botRes.data ?? null, scripts: {}, faqs: faqsRes.data ?? [], menu: menuRes.data ?? [] },
     };
