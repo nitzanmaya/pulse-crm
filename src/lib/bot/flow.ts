@@ -5,7 +5,7 @@
 // greeting -> service -> follow-up questions (quantity...) -> day -> time ->
 // address -> email (optional) -> summary -> booked (calendar confirmation)
 
-import { quote, localParts, fmtTime, fmtDay, WEEKDAYS_HE, minutesLabel, type Answers, type BookableService } from "@/lib/booking/shared"
+import { quote, localParts, fmtTime, fmtDay, slotLabel, WEEKDAYS_HE, minutesLabel, type Answers, type BookableService } from "@/lib/booking/shared"
 import { DEFAULT_BOT_TEXTS, fill, type BotTextKey, type BotTexts } from "@/lib/bot/texts"
 
 export type Slot = { start: string; end: string }
@@ -116,7 +116,7 @@ function askTime(ctx: BotContext, state: BotState): BotMessage {
   const step = Math.max(1, Math.floor(daySlots.length / 8))
   const picks = daySlots.filter((_, i) => i % step === 0).slice(0, 8)
   state.step = "time"
-  state.options = [...picks.map((s) => ({ id: s.start, label: fmtTime(s.start) })), { id: "back", label: "↩️ יום אחר" }]
+  state.options = [...picks.map((s) => ({ id: s.start, label: slotLabel(s) })), { id: "back", label: "↩️ יום אחר" }]
   return { text: say(ctx, "time_prompt", { date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "numeric" }), service: serviceOf(ctx, state).name }), options: state.options }
 }
 
@@ -141,7 +141,7 @@ function summary(ctx: BotContext, state: BotState): BotMessage[] {
     card: {
       title: service.name,
       lines: [
-        `🗓️ ${fmtDay(state.day!, { weekday: "long", day: "numeric", month: "long" })} · ${fmtTime(state.slot!.start)}`,
+        `🗓️ ${fmtDay(state.day!, { weekday: "long", day: "numeric", month: "long" })} · ${slotLabel(state.slot!)}`,
         `📍 ${state.address}`,
         ...(state.email ? [`📧 ${state.email}`] : []),
         ...extras.map((e) => `• ${e}`),
@@ -229,7 +229,7 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
       state.slot = state.slots!.find((s) => s.start === o.id)
       state.step = "address"
       state.options = []
-      return reply({ text: say(ctx, "address_prompt", { time: fmtTime(state.slot!.start), date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "numeric" }) }) })
+      return reply({ text: say(ctx, "address_prompt", { time: slotLabel(state.slot!), date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "numeric" }) }) })
     }
     case "address": {
       const a = (input.text ?? "").trim()
@@ -283,7 +283,7 @@ export async function botTurn(prev: BotState, input: { text?: string; optionId?:
         },
         {
           text: [
-            say(ctx, "confirmed", { service: service.name, date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "long" }), time: fmtTime(state.slot!.start) }),
+            say(ctx, "confirmed", { service: service.name, date: fmtDay(state.day!, { weekday: "long", day: "numeric", month: "long" }), time: slotLabel(state.slot!) }),
             state.email && `📧 יום לפני הביקור נשלח תזכורת ל-${state.email}`,
           ].filter(Boolean).join("\n"),
           options: state.options,

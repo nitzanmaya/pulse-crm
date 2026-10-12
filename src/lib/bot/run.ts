@@ -71,7 +71,14 @@ export async function handleInbound(msg: InboundMessage): Promise<{ status: stri
       orgName: org.name,
       customerName: conv.contact_name ?? msg.name,
       services: org.booking_enabled ? services : [],
-      getSlots: (service, answers) => getAvailableSlots({ db, slug: org.slug, orgId: org.id, serviceId: service.id, answers, days: 14 }),
+      getSlots: async (service, answers) => {
+        const [slots, page] = await Promise.all([
+          getAvailableSlots({ db, slug: org.slug, orgId: org.id, serviceId: service.id, answers, days: 14 }),
+          db.rpc("get_booking_page", { _slug: org.slug }),
+        ])
+        const windowed = Boolean((page.data as { org?: { windowed?: boolean } } | null)?.org?.windowed)
+        return windowed ? slots.map((s) => ({ ...s, window: true })) : slots
+      },
       book: async ({ service, answers, slot, address, email }) => {
         const { data: booked, error: bookError } = await db.rpc("book_appointment", {
           _slug: org.slug,

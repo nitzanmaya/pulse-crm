@@ -34,7 +34,8 @@ type Db = SupabaseClient<Database>
 const serverDb = (): Db => createClient<Database>(env.supabaseUrl(), env.supabaseKey(), { auth: { persistSession: false } })
 const secret = () => env.cronSecret()
 
-export type Slot = { start: string; end: string }
+// window: an arrival window (08:00-10:00) rather than an exact start time
+export type Slot = { start: string; end: string; window?: boolean }
 export type EventDetails = {
   appointmentId?: string
   orgId: string

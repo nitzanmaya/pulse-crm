@@ -24,6 +24,7 @@ type Organization = {
   booking_buffer_minutes: number
   booking_min_notice_hours: number
   booking_max_days: number
+  booking_windows: Json
 }
 
 type Lead = {
