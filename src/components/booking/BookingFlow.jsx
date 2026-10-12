@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Heart, Sparkles, ListChecks, CalendarDays, User, Check, ArrowRight, ArrowLeft, Timer, Coins, MessageCircle, Mail,
-  MapPin, Phone, Sun, Sunset, Moon, CalendarPlus, RotateCcw, Loader2, CircleAlert, ChevronLeft, ChevronRight, Plus, Minus, ShoppingBag,
+  MapPin, Phone, Sun, Sunset, Moon, CalendarPlus, RotateCcw, Loader2, CircleAlert, ChevronLeft, ChevronRight, Plus, Minus, ShoppingBag, Volume2, VolumeX,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -87,6 +87,43 @@ function WhatsAppFab({ org }) {
 }
 
 // "ניקוי מזגנים" + "ניקוי ספות" -> "ניקוי מזגנים + ספות"
+// Short "added to cart" chime made on the fly, no audio file needed
+let audioCtx;
+function chime(up) {
+  try {
+    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const t = audioCtx.currentTime;
+    (up ? [660, 990] : [520, 390]).forEach((f, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "sine"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + i * 0.09);
+      g.gain.exponentialRampToValueAtTime(up ? 0.22 : 0.12, t + i * 0.09 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.09 + 0.22);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.25);
+    });
+  } catch {}
+}
+
+// A small "+1" bubble that arcs from the tapped button into the cart
+function flyToCart(fromEl, toEl, grad) {
+  if (!fromEl || !toEl || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+  const dot = document.createElement("div");
+  dot.textContent = "+1";
+  dot.className = `pointer-events-none fixed z-50 flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br ${grad} text-sm font-bold text-white shadow-xl ring-2 ring-white`;
+  dot.style.left = `${a.left + a.width / 2 - 22}px`;
+  dot.style.top = `${a.top + a.height / 2 - 22}px`;
+  document.body.appendChild(dot);
+  const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  dot.animate([
+    { transform: "translate(0,0) scale(1)", opacity: 1 },
+    { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 120}px) scale(1.15)`, opacity: 1, offset: 0.45 },
+    { transform: `translate(${dx}px, ${dy}px) scale(0.3)`, opacity: 0.6 },
+  ], { duration: 650, easing: "cubic-bezier(0.45, 0, 0.55, 1)" }).onfinish = () => dot.remove();
+}
+
 function comboLabel(groups) {
   const first = groups.map((g) => g.split(" ")[0]);
   if (groups.every((g) => g.includes(" ")) && first.every((w) => w === first[0])) {
@@ -104,9 +141,25 @@ export default function BookingFlow({ org, services }) {
   const shown = grouped && group && group !== "*" ? services.filter((s) => !s.category?.trim() || s.category.trim() === group) : services;
   const otherGroups = grouped && group && group !== "*" ? groups.filter((g) => g !== group) : [];
   const [hintOff, setHintOff] = useState(false);
-  // "Everything" mode: the customer builds one visit from several services
-  const cartMode = grouped && group === "*";
+  // Cart mode: once a group is picked, the customer builds one visit from any
+  // number of services, like an online store; the cart survives switching groups
+  const cartMode = grouped && group !== null;
+  const cartShown = group === "*" ? [...groups, null] : [group, null];
   const [cart, setCart] = useState({});
+  const bagRef = useRef(null);
+  const [bump, setBump] = useState(0);
+  const [muted, setMuted] = useState(() => { try { return localStorage.getItem("booking-muted") === "1"; } catch { return false; } });
+  const toggleMute = () => { setMuted((m) => { try { localStorage.setItem("booking-muted", m ? "0" : "1"); } catch {} return !m; }); };
+  const addOne = (s, e, n) => {
+    if (n >= 20) return;
+    setQty(s.id, n + 1);
+    flyToCart(e.currentTarget, bagRef.current, serviceColor(s.color).grad);
+    if (!muted) chime(true);
+    navigator.vibrate?.(12);
+    setTimeout(() => setBump((b) => b + 1), 600);
+  };
+  const removeOne = (s, n) => { setQty(s.id, n - 1); if (!muted) chime(false); setBump((b) => b + 1); };
+  const moreTarget = otherGroups.length === 1 ? otherGroups[0] : "*";
   const cartLines = services.filter((s) => cart[s.id] > 0).map((s) => ({ service: s, qty: cart[s.id] }));
   const cartTotal = cartLines.reduce((t, l) => ({ minutes: t.minutes + l.service.duration_minutes * l.qty, price: t.price + l.service.price * l.qty }), { minutes: 0, price: 0 });
   const setQty = (id, n) => setCart((c) => ({ ...c, [id]: Math.max(0, Math.min(20, n)) }));
@@ -258,8 +311,8 @@ export default function BookingFlow({ org, services }) {
           {otherGroups.length > 0 && !hintOff && step < 4 && (
             <div className="mb-5 flex animate-fade-up items-center gap-2.5 rounded-2xl bg-gradient-to-l from-amber-50 to-rose-50 px-4 py-2.5 text-[15px] text-slate-700 ring-1 ring-amber-100">
               <Sparkles size={18} className="shrink-0 text-amber-500" />
-              <span className="min-w-0 flex-1"><span className="font-semibold">יש גם {otherGroups.join(" ו")}!</span>{step === 0 ? "" : " אפשר לקבוע גם אותו מיד אחרי התור הזה."}</span>
-              {step === 0 && <button type="button" onClick={() => setGroup("*")} className="shrink-0 font-semibold text-rose-600 hover:underline">להציג הכל</button>}
+              <span className="min-w-0 flex-1"><span className="font-semibold">יש גם {otherGroups.join(" ו")}!</span>{step === 0 ? "" : " אפשר להוסיף לאותו ביקור."}</span>
+              {step < 3 && <button type="button" onClick={() => { setGroup(moreTarget); if (step) go(0); }} className="shrink-0 font-semibold text-rose-600 hover:underline">להוסיף לסל</button>}
               <button type="button" onClick={() => setHintOff(true)} aria-label="סגירה" className="shrink-0 rounded-full p-1 text-slate-400 hover:bg-white hover:text-slate-600">✕</button>
             </div>
           )}
@@ -283,15 +336,15 @@ export default function BookingFlow({ org, services }) {
 
           {step === 0 && cartMode && (
             <>
-              <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{comboLabel(groups)}</button>
+              <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{group === "*" ? comboLabel(groups) : group}</button>
               <h2 className="text-2xl font-bold text-slate-900">מה מנקים הפעם?</h2>
-              <p className="mt-1 text-base text-slate-500">הוסיפו כל מה שצריך לביקור אחד. אפשר לשנות כמויות עם + ו־−.</p>
-              {[...groups, null].map((g) => {
+              <p className="mt-1 text-base text-slate-500">הוסיפו לסל כל מה שצריך לביקור אחד, בכל כמות.</p>
+              {cartShown.map((g) => {
                 const list = services.filter((s) => (g ? s.category?.trim() === g : !s.category?.trim()));
                 if (!list.length) return null;
                 return (
                   <div key={g ?? "other"} className="mt-6">
-                    {g && <div className="mb-2.5 text-sm font-bold uppercase tracking-wide text-slate-400">{g}</div>}
+                    {g && group === "*" && <div className="mb-2.5 text-sm font-bold uppercase tracking-wide text-slate-400">{g}</div>}
                     <div className="flex flex-col gap-2.5">
                       {list.map((s, i) => {
                         const n = cart[s.id] ?? 0;
@@ -309,15 +362,15 @@ export default function BookingFlow({ org, services }) {
                               </div>
                             </div>
                             {n === 0 ? (
-                              <button type="button" onClick={() => setQty(s.id, 1)} aria-label={`הוספת ${s.name}`}
+                              <button type="button" onClick={(e) => addOne(s, e, 0)} aria-label={`הוספת ${s.name}`}
                                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/30 transition hover:scale-105 active:scale-90">
                                 <Plus size={24} strokeWidth={2.75} />
                               </button>
                             ) : (
                               <div className="flex shrink-0 items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-rose-200">
-                                <button type="button" onClick={() => setQty(s.id, n - 1)} aria-label="פחות" className="flex h-10 w-10 items-center justify-center rounded-full text-rose-600 transition hover:bg-rose-50 active:scale-90"><Minus size={20} strokeWidth={2.75} /></button>
+                                <button type="button" onClick={() => removeOne(s, n)} aria-label="פחות" className="flex h-10 w-10 items-center justify-center rounded-full text-rose-600 transition hover:bg-rose-50 active:scale-90"><Minus size={20} strokeWidth={2.75} /></button>
                                 <span key={n} className="w-7 animate-pop-in text-center text-xl font-bold tabular-nums text-slate-900">{n}</span>
-                                <button type="button" onClick={() => setQty(s.id, n + 1)} disabled={n >= 20} aria-label="עוד" className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600 active:scale-90 disabled:opacity-40"><Plus size={20} strokeWidth={2.75} /></button>
+                                <button type="button" onClick={(e) => addOne(s, e, n)} disabled={n >= 20} aria-label="עוד" className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600 active:scale-90 disabled:opacity-40"><Plus size={20} strokeWidth={2.75} /></button>
                               </div>
                             )}
                           </div>
@@ -328,17 +381,28 @@ export default function BookingFlow({ org, services }) {
                 );
               })}
               <div className={`sticky z-10 mt-6 rounded-2xl bg-slate-900 p-4 text-white shadow-2xl transition ${org.whatsapp ? "bottom-24 sm:bottom-4" : "bottom-4"}`}>
-                {cartLines.length ? (
+                <div className="flex items-center gap-3">
+                  <span ref={bagRef} key={bump} className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 ${bump ? "animate-wiggle" : ""}`}>
+                    <ShoppingBag size={22} />
+                    {cartLines.length > 0 && <span className="absolute -end-1.5 -top-1.5 flex h-5 min-w-5 animate-pop-in items-center justify-center rounded-full bg-rose-500 px-1 text-xs font-bold tabular-nums">{cartLines.reduce((t, l) => t + l.qty, 0)}</span>}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15px] font-bold">סל השירותים</div>
+                    <div className="text-sm text-white/70">{cartLines.length ? `${cartLines.reduce((t, l) => t + l.qty, 0)} פריטים · ${minutesLabel(cartTotal.minutes)}` : "לחצו + כדי להוסיף לסל"}</div>
+                  </div>
+                  <button type="button" onClick={toggleMute} aria-label={muted ? "הפעלת צלילים" : "השתקת צלילים"} aria-pressed={!muted}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white">
+                    {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  </button>
+                </div>
+                {cartLines.length > 0 && (
                   <>
-                    <div className="flex items-center gap-2 text-sm text-white/70"><ShoppingBag size={16} />{cartLines.reduce((t, l) => t + l.qty, 0)} פריטים · {minutesLabel(cartTotal.minutes)}</div>
-                    <div className="mt-0.5 line-clamp-2 text-[15px] font-semibold">{cartTitle(cartLines)}</div>
+                    <div className="mt-3 line-clamp-2 text-[15px] font-semibold">{cartTitle(cartLines)}</div>
                     <button onClick={startCart} disabled={cartTotal.minutes > 16 * 60}
                       className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-rose-500 to-pink-500 text-base font-bold shadow-lg transition active:scale-[0.98] disabled:opacity-50">
                       <span key={cartTotal.price} className="animate-pop-in tabular-nums">{ils(cartTotal.price)}</span> · לבחירת מועד<ArrowLeft size={19} />
                     </button>
                   </>
-                ) : (
-                  <div className="flex items-center gap-2 text-[15px] text-white/80"><ShoppingBag size={18} />לחצו + כדי להוסיף לביקור</div>
                 )}
               </div>
             </>
