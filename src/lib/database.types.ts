@@ -361,6 +361,7 @@ export type Database = {
         Returns: Json
       }
       bot_update_messages: { Args: { _secret: string; _updates: Json }; Returns: number }
+      bot_record_echo: { Args: { _secret: string; _phone_number_id: string; _wa_id: string; _wa_message_id: string; _body: string }; Returns: Json }
       calendar_store_connection: {
         Args: { _secret: string; _org: string; _user: string; _email: string | null; _calendar_id: string; _refresh_token: string; _access_token: string; _expires_at: string }
         Returns: string
