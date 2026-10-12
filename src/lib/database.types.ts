@@ -27,6 +27,8 @@ type Organization = {
   booking_windows: Json
   booking_max_km: number | null
   booking_logo: string | null
+  booking_phone: string | null
+  booking_whatsapp: string | null
 }
 
 type Lead = {
@@ -106,6 +108,7 @@ type Appointment = {
   id: string
   lat: number | null
   lng: number | null
+  title: string | null
   lead_id: string | null
   notes: string | null
   org_id: string
@@ -341,6 +344,25 @@ export type Database = {
       get_booking_slots_near: {
         Args: { _slug: string; _service: string; _answers: Json; _from: string | null; _days: number; _lat: number | null; _lng: number | null }
         Returns: { slot_start: string; slot_end: string; near: boolean }[]
+      }
+      get_booking_slots_cart: {
+        Args: { _slug: string; _items: Json; _from: string | null; _days: number; _lat: number | null; _lng: number | null }
+        Returns: { slot_start: string; slot_end: string; near: boolean }[]
+      }
+      book_appointment_cart: {
+        Args: {
+          _slug: string
+          _items: Json
+          _starts_at: string
+          _name: string
+          _phone: string
+          _email: string | null
+          _address: string | null
+          _notes: string | null
+          _lat: number | null
+          _lng: number | null
+        }
+        Returns: Json
       }
       book_appointment_geo: {
         Args: {

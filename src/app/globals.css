@@ -13,6 +13,7 @@
   --animate-confetti: confetti 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-ripple: ripple 600ms ease-out forwards;
   --animate-shimmer: shimmer 2.4s linear infinite;
+  --animate-sweep: sweep 3.6s ease-in-out infinite;
 
   @keyframes heartbeat {
     0%, 40%, 100% { transform: scale(1); }
@@ -40,6 +41,10 @@
   @keyframes ripple {
     from { opacity: 0.35; transform: translate(-50%, -50%) scale(0); }
     to { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+  }
+  @keyframes sweep {
+    0% { transform: translateX(0) skewX(-12deg); }
+    35%, 100% { transform: translateX(400%) skewX(-12deg); }
   }
   @keyframes shimmer {
     from { background-position: 200% 0; }

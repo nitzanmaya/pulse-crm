@@ -17,6 +17,8 @@ type Body = {
   notes?: string
   lat?: number
   lng?: number
+  // Cart: several services in one visit
+  items?: { service?: unknown; qty?: unknown }[]
 }
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
@@ -26,7 +28,10 @@ const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : n
 // confirmations, then we send them right away instead of waiting for the cron.
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as Body | null
-  if (!body?.slug || !body.serviceId || !body.startsAt) return NextResponse.json({ error: "bad_request" }, { status: 400 })
+  const items = Array.isArray(body?.items)
+    ? body.items.slice(0, 20).map((i) => ({ service: str(i?.service, 40), qty: typeof i?.qty === "number" ? Math.trunc(i.qty) : 0 }))
+    : null
+  if (!body?.slug || (!body.serviceId && !items?.length) || !body.startsAt) return NextResponse.json({ error: "bad_request" }, { status: 400 })
 
   const answers = Object.fromEntries(
     Object.entries(body.answers ?? {}).slice(0, 20).map(([k, v]) => [str(k, 40), str(v, 200)]),
@@ -37,20 +42,33 @@ export async function POST(request: NextRequest) {
   // coordinates are saved for the next customer's check
   const lat = num(body.lat)
   const lng = lat === null ? null : num(body.lng)
-  const { data, error } = await supabase.rpc("book_appointment_geo", {
-    _slug: str(body.slug, 48),
-    _service: body.serviceId,
-    _starts_at: body.startsAt,
-    _answers: answers,
-    _name: str(body.name, 120),
-    _phone: str(body.phone, 32),
-    _email: str(body.email, 254) || null,
-    _address: str(body.address, 300) || null,
-    _notes: str(body.notes, 1000) || null,
-    _source: "booking_page",
-    _lat: lng === null ? null : lat,
-    _lng: lng,
-  })
+  const { data, error } = items?.length
+    ? await supabase.rpc("book_appointment_cart", {
+        _slug: str(body.slug, 48),
+        _items: items,
+        _starts_at: body.startsAt,
+        _name: str(body.name, 120),
+        _phone: str(body.phone, 32),
+        _email: str(body.email, 254) || null,
+        _address: str(body.address, 300) || null,
+        _notes: str(body.notes, 1000) || null,
+        _lat: lng === null ? null : lat,
+        _lng: lng,
+      })
+    : await supabase.rpc("book_appointment_geo", {
+        _slug: str(body.slug, 48),
+        _service: body.serviceId!,
+        _starts_at: body.startsAt,
+        _answers: answers,
+        _name: str(body.name, 120),
+        _phone: str(body.phone, 32),
+        _email: str(body.email, 254) || null,
+        _address: str(body.address, 300) || null,
+        _notes: str(body.notes, 1000) || null,
+        _source: "booking_page",
+        _lat: lng === null ? null : lat,
+        _lng: lng,
+      })
 
   if (error) {
     const code = error.hint === "slot_taken" ? "slot_taken" : error.code === "22023" ? "invalid" : error.code === "P0002" ? "not_found" : "failed"

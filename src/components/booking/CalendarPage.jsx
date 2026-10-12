@@ -190,11 +190,11 @@ function WeekView({ org, onOpen, onNew, canEdit }) {
                       const height = Math.max(26, ((endMin - (a._p.hour * 60 + a._p.minute)) / 60) * HOUR_PX - 3);
                       const dim = !ACTIVE.includes(a.status) && a.status !== "completed";
                       return (
-                        <button key={a.id} onClick={() => onOpen(a)} title={`${a.customer_name} · ${svc?.name ?? ""}`}
+                        <button key={a.id} onClick={() => onOpen(a)} title={`${a.customer_name} · ${a.title ?? svc?.name ?? ""}`}
                           className={`group absolute inset-x-1 z-10 animate-pop-in overflow-hidden rounded-xl border-s-4 ${c.border} ${c.soft} px-2 py-1 text-start shadow-sm ring-1 ring-black/5 transition duration-200 hover:z-30 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-200 ${dim ? "opacity-50 line-through" : ""}`}
                           style={{ top: Math.max(0, top) + 1, height }}>
                           <div className={`truncate text-xs font-bold ${c.text}`}>{fmtTime(a.starts_at)} · {a.customer_name}</div>
-                          {height > 40 && <div className="truncate text-[11px] text-slate-600">{svc?.name ?? "תור"}{a.address ? ` · ${a.address}` : ""}</div>}
+                          {height > 40 && <div className="truncate text-[11px] text-slate-600">{a.title ?? svc?.name ?? "תור"}{a.address ? ` · ${a.address}` : ""}</div>}
                           {a.status === "completed" && <Check size={13} className="absolute bottom-1 end-1 text-sky-600" />}
                           {a.source !== "manual" && height > 56 && (
                             <span className="absolute bottom-1 start-2 text-[10px] font-semibold text-slate-400">{SOURCE[a.source]}</span>
@@ -226,7 +226,7 @@ function WeekView({ org, onOpen, onNew, canEdit }) {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-semibold text-slate-800">{a.customer_name}</span>
-                      <span className="block truncate text-xs text-slate-500">{svc?.name ?? "תור"} · {fmtDate(a.starts_at, { day: "numeric", month: "numeric" })}</span>
+                      <span className="block truncate text-xs text-slate-500">{a.title ?? svc?.name ?? "תור"} · {fmtDate(a.starts_at, { day: "numeric", month: "numeric" })}</span>
                     </span>
                     <StatusChip status={a.status} />
                   </button>
@@ -288,7 +288,10 @@ function AppointmentModal({ appt, org, db, userId, canEdit, isAdmin, notify, fai
   });
   const [busy, setBusy] = useState(false);
   const svc = org.services.find((s) => s.id === d.service_id);
-  const q = svc ? quote(svc, d.answers) : { minutes: 60, price: 0 };
+  // A multi-item visit from the booking page keeps its own length and price
+  const q = appt.title && d.service_id === appt.service_id
+    ? { minutes: Math.round((Date.parse(appt.ends_at) - Date.parse(appt.starts_at)) / 60000), price: Number(appt.price) }
+    : svc ? quote(svc, d.answers) : { minutes: 60, price: 0 };
   const set = (k) => (e) => setD({ ...d, [k]: e.target.value });
   const jobs = org.jobs.filter((j) => j.appointment_id === appt.id);
   const lead = org.leads.find((l) => l.id === appt.lead_id);
@@ -380,7 +383,7 @@ function AppointmentModal({ appt, org, db, userId, canEdit, isAdmin, notify, fai
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 text-xl font-bold text-slate-900">{appt.customer_name}<StatusChip status={appt.status} /></div>
-            <div className="text-sm text-slate-600">{svc?.name ?? "תור"} · {fmtDate(appt.starts_at, { weekday: "long", day: "numeric", month: "long" })} · <bdi dir="ltr">{fmtTime(appt.starts_at)}–{fmtTime(appt.ends_at)}</bdi></div>
+            <div className="text-sm text-slate-600">{appt.title ?? svc?.name ?? "תור"} · {fmtDate(appt.starts_at, { weekday: "long", day: "numeric", month: "long" })} · <bdi dir="ltr">{fmtTime(appt.starts_at)}–{fmtTime(appt.ends_at)}</bdi></div>
             <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-500">
               <span>מקור: {SOURCE[appt.source]}</span>
               <span>Google Calendar: {appt.sync_status === "synced" ? "מסונכרן" : appt.sync_status === "pending" ? "ממתין לסנכרון" : "לא מחובר"}</span>
@@ -410,7 +413,10 @@ function AppointmentModal({ appt, org, db, userId, canEdit, isAdmin, notify, fai
         <Field label="אימייל"><input dir="ltr" type="email" className={inputCls} value={d.email} onChange={set("email")} disabled={!editable} /></Field>
       </div>
 
-      {svc?.questions?.length > 0 && (
+      {appt.title && (
+        <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-[15px] text-slate-700"><span className="font-semibold">מה הוזמן: </span>{appt.title}</div>
+      )}
+      {svc?.questions?.length > 0 && !appt.title && (
         <div className="mt-5 grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 sm:grid-cols-2">
           {svc.questions.map((qq) => (
             <Field key={qq.id} label={qq.label}>
@@ -901,6 +907,30 @@ function LogoField({ org, isAdmin, fail, onSave }) {
   );
 }
 
+// Digits only, optional leading +; empty clears the button
+const cleanPhone = (v) => { const t = v.trim(); return t ? (t.startsWith("+") ? "+" : "") + t.replace(/\D/g, "") : ""; };
+
+function ContactFields({ org, isAdmin, onSave }) {
+  const [phone, setPhone] = useState(org.booking.phone);
+  const [whatsapp, setWhatsapp] = useState(org.booking.whatsapp);
+  const valid = (v) => !v || /^\+?\d{9,15}$/.test(cleanPhone(v));
+  const dirty = phone !== org.booking.phone || whatsapp !== org.booking.whatsapp;
+  return (
+    <Field label="כפתורי חיוג ו-WhatsApp בטלפון">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <input className={`${inputCls} text-right ${valid(phone) ? "" : "border-red-300"}`} dir="ltr" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="טלפון לחיוג, למשל 050-1234567" disabled={!isAdmin} />
+        <input className={`${inputCls} text-right ${valid(whatsapp) ? "" : "border-red-300"}`} dir="ltr" type="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="WhatsApp (אם שונה מהטלפון)" disabled={!isAdmin} />
+      </div>
+      {isAdmin && dirty && (
+        <div className="mt-2 flex justify-end">
+          <Btn disabled={!valid(phone) || !valid(whatsapp)} onClick={() => { const p = cleanPhone(phone); const w = cleanPhone(whatsapp); setPhone(p); setWhatsapp(w); onSave({ booking_phone: p || null, booking_whatsapp: w || null }, { phone: p, whatsapp: w }); }}><Check size={17} />שמירה</Btn>
+        </div>
+      )}
+      <p className="mt-1 text-xs text-slate-500">מוצגים בתחתית דף ההזמנה בטלפון. בלי מספר הכפתורים לא יוצגו.</p>
+    </Field>
+  );
+}
+
 function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, providers }) {
   const url = `${siteUrl.replace(/\/$/, "")}/book/${org.slug}`;
   const [headline, setHeadline] = useState(org.booking.headline);
@@ -926,6 +956,7 @@ function BookingPageTab({ org, db, isAdmin, notify, fail, patchOrg, siteUrl, pro
           <Toggle checked={org.booking.enabled} disabled={!isAdmin} onChange={(v) => update({ booking_enabled: v }, { enabled: v })}
             icon={Globe} title="הדף פתוח להזמנות" text={org.booking.enabled ? "לקוחות יכולים לקבוע תורים עכשיו" : "הדף מוסתר, הקישור מחזיר ״לא נמצא״"} />
           <LogoField org={org} isAdmin={isAdmin} fail={fail} onSave={(logo) => update({ booking_logo: logo }, { logo })} />
+          <ContactFields org={org} isAdmin={isAdmin} onSave={update} />
           <Field label="כותרת משנה בדף">
             <div className="flex gap-2">
               <input className={inputCls} value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="לדוגמה: ניקוי מקצועי עד הבית, בלי לכלוך" disabled={!isAdmin} maxLength={160} />

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Heart, Sparkles, ListChecks, CalendarDays, User, Check, ArrowRight, ArrowLeft, Timer, Coins, MessageCircle, Mail,
-  MapPin, Phone, Sun, Sunset, Moon, CalendarPlus, RotateCcw, Loader2, CircleAlert, ChevronLeft, ChevronRight,
+  MapPin, Phone, Sun, Sunset, Moon, CalendarPlus, RotateCcw, Loader2, CircleAlert, ChevronLeft, ChevronRight, Plus, Minus, ShoppingBag,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -67,6 +67,37 @@ function QuoteBar({ service, answers }) {
   );
 }
 
+// Same wording as private.cart_quote: "2× מזגן קטן + ספה"
+const cartTitle = (lines) => lines.map((l) => `${l.qty > 1 ? `${l.qty}× ` : ""}${l.service.name}`).join(" + ");
+
+// The customer's own WhatsApp opens a chat with the business (0501234567 -> 972501234567)
+const waNumber = (n) => { const d = String(n).replace(/\D/g, ""); return d.startsWith("0") ? `972${d.slice(1)}` : d; };
+
+// Mobile only: call and WhatsApp buttons pinned to the bottom, with a light
+// sweeping across them every few seconds
+function ContactBar({ org }) {
+  if (!org.phone && !org.whatsapp) return null;
+  const btn = "relative flex h-14 flex-1 items-center justify-center gap-2 overflow-hidden rounded-2xl text-[17px] font-bold text-white shadow-lg transition active:scale-95";
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 flex gap-3 border-t border-slate-200/70 bg-white/90 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 backdrop-blur sm:hidden">
+      {org.phone && (
+        <a href={`tel:${org.phone}`} className={`${btn} bg-gradient-to-l from-blue-600 to-sky-500 shadow-blue-500/30`}>
+          <span aria-hidden className="animate-sweep pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-l from-transparent via-white/45 to-transparent" />
+          <Phone size={21} />חיוג מהיר
+        </a>
+      )}
+      {org.whatsapp && (
+        <a href={`https://wa.me/${waNumber(org.whatsapp)}?text=${encodeURIComponent(`היי ${org.name}, הגעתי מדף ההזמנה`)}`} target="_blank" rel="noreferrer"
+          className={`${btn} bg-[#25D366] shadow-green-500/30`}>
+          <span aria-hidden className="animate-sweep pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-l from-transparent via-white/45 to-transparent [animation-delay:300ms]" />
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.33-.69-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.86s.71-2.03.97-2.31c.25-.28.55-.35.73-.35l.53.01c.17.01.4-.06.62.47.25.6.85 2.06.92 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48l-.42.49c-.14.14-.28.29-.12.57.16.28.72 1.19 1.55 1.93 1.07.95 1.97 1.25 2.25 1.39.28.14.44.12.6-.07.17-.19.7-.82.88-1.1.19-.28.37-.23.62-.14.25.09 1.6.76 1.88.89.28.14.46.21.53.32.07.12.07.67-.18 1.36Z"/></svg>
+          WhatsApp
+        </a>
+      )}
+    </div>
+  );
+}
+
 // "ניקוי מזגנים" + "ניקוי ספות" -> "ניקוי מזגנים + ספות"
 function comboLabel(groups) {
   const first = groups.map((g) => g.split(" ")[0]);
@@ -85,6 +116,17 @@ export default function BookingFlow({ org, services }) {
   const shown = grouped && group && group !== "*" ? services.filter((s) => !s.category?.trim() || s.category.trim() === group) : services;
   const otherGroups = grouped && group && group !== "*" ? groups.filter((g) => g !== group) : [];
   const [hintOff, setHintOff] = useState(false);
+  // "Everything" mode: the customer builds one visit from several services
+  const cartMode = grouped && group === "*";
+  const [cart, setCart] = useState({});
+  const cartLines = services.filter((s) => cart[s.id] > 0).map((s) => ({ service: s, qty: cart[s.id] }));
+  const cartTotal = cartLines.reduce((t, l) => ({ minutes: t.minutes + l.service.duration_minutes * l.qty, price: t.price + l.service.price * l.qty }), { minutes: 0, price: 0 });
+  const setQty = (id, n) => setCart((c) => ({ ...c, [id]: Math.max(0, Math.min(20, n)) }));
+  const startCart = () => {
+    setService({ id: "cart", name: cartTitle(cartLines), duration_minutes: cartTotal.minutes, price: cartTotal.price, color: "rose", questions: [], items: cartLines.map((l) => ({ service: l.service.id, qty: l.qty })) });
+    setAnswers({}); setSlots(null); setSlot(null); setDay(null);
+    go(2);
+  };
   const [step, setStep] = useState(0);
   const [service, setService] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -113,7 +155,11 @@ export default function BookingFlow({ org, services }) {
   useEffect(() => {
     if (step !== 2 || !service || needsPlace) return;
     let alive = true;
-    db.rpc("get_booking_slots_near", { _slug: org.slug, _service: service.id, _answers: answers, _from: from, _days: WINDOW, _lat: place?.lat ?? null, _lng: place?.lng ?? null }).then(({ data, error: e }) => {
+    const geoArgs = { _from: from, _days: WINDOW, _lat: place?.lat ?? null, _lng: place?.lng ?? null };
+    const req = service.items
+      ? db.rpc("get_booking_slots_cart", { _slug: org.slug, _items: service.items, ...geoArgs })
+      : db.rpc("get_booking_slots_near", { _slug: org.slug, _service: service.id, _answers: answers, ...geoArgs });
+    req.then(({ data, error: e }) => {
       if (!alive) return;
       if (e) { setError("לא הצלחנו לטעון שעות פנויות. נסו לרענן את הדף."); setSlots([]); return; }
       const list = data.map((s) => ({ start: s.slot_start, end: s.slot_end, near: s.near }));
@@ -175,7 +221,7 @@ export default function BookingFlow({ org, services }) {
     const res = await fetch("/api/book", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slug: org.slug, serviceId: service.id, startsAt: slot.start, answers, ...form, ...(place ? { lat: place.lat, lng: place.lng } : {}) }),
+      body: JSON.stringify({ slug: org.slug, ...(service.items ? { items: service.items } : { serviceId: service.id, answers }), startsAt: slot.start, ...form, ...(place ? { lat: place.lat, lng: place.lng } : {}) }),
     }).catch(() => null);
     const body = await res?.json().catch(() => ({}));
     setBusy(false);
@@ -188,13 +234,13 @@ export default function BookingFlow({ org, services }) {
     setError(body?.error === "invalid" ? "חלק מהפרטים לא תקינים, בדקו את הטלפון והמייל." : "משהו השתבש בשליחה. נסו שוב בעוד רגע.");
   };
 
-  const reset = () => { setService(null); setAnswers({}); setSlot(null); setSlots(null); setResult(null); setForm({ name: "", phone: "", address: "", email: "", notes: "" }); setPlace(null); setWhere(""); setGeoSkip(false); setGeoMisses(0); setGroup(null); go(0); };
+  const reset = () => { setService(null); setAnswers({}); setSlot(null); setSlots(null); setResult(null); setForm({ name: "", phone: "", address: "", email: "", notes: "" }); setPlace(null); setWhere(""); setGeoSkip(false); setGeoMisses(0); setGroup(null); setCart({}); go(0); };
   // Book the other group right after: same customer, same address
   const bookAlso = (g) => { setService(null); setAnswers({}); setSlot(null); setSlots(null); setResult(null); setGroup(g); setHintOff(true); go(0); };
   const c = serviceColor(service?.color);
 
   return (
-    <main dir="rtl" className="relative min-h-screen overflow-hidden bg-[#fdf8fa] px-4 pb-16 pt-8 sm:pt-12">
+    <main dir="rtl" className={`relative min-h-screen overflow-clip bg-[#fdf8fa] px-4 pt-8 sm:pb-16 sm:pt-12 ${org.phone || org.whatsapp ? "pb-32" : "pb-16"}`}>
       <div aria-hidden className="pointer-events-none absolute -end-32 -top-32 h-96 w-96 rounded-full bg-rose-300/30 blur-3xl" />
       <div aria-hidden className="pointer-events-none absolute -bottom-40 -start-32 h-[28rem] w-[28rem] rounded-full bg-violet-300/25 blur-3xl" />
 
@@ -247,7 +293,70 @@ export default function BookingFlow({ org, services }) {
             </>
           )}
 
-          {step === 0 && (!grouped || group) && (
+          {step === 0 && cartMode && (
+            <>
+              <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{comboLabel(groups)}</button>
+              <h2 className="text-2xl font-bold text-slate-900">מה מנקים הפעם?</h2>
+              <p className="mt-1 text-base text-slate-500">הוסיפו כל מה שצריך לביקור אחד. אפשר לשנות כמויות עם + ו־−.</p>
+              {[...groups, null].map((g) => {
+                const list = services.filter((s) => (g ? s.category?.trim() === g : !s.category?.trim()));
+                if (!list.length) return null;
+                return (
+                  <div key={g ?? "other"} className="mt-6">
+                    {g && <div className="mb-2.5 text-sm font-bold uppercase tracking-wide text-slate-400">{g}</div>}
+                    <div className="flex flex-col gap-2.5">
+                      {list.map((s, i) => {
+                        const n = cart[s.id] ?? 0;
+                        return (
+                          <div key={s.id} style={{ animationDelay: `${i * 50}ms` }}
+                            className={`flex animate-fade-up items-center gap-3 rounded-2xl border-2 p-3.5 transition duration-200 ${n ? "border-rose-300 bg-rose-50/60 shadow-md shadow-rose-500/10" : "border-slate-100 bg-white"}`}>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 text-[16px] font-bold text-slate-900">
+                                {n > 0 && <Check size={16} strokeWidth={3} className="shrink-0 animate-pop-in text-rose-500" />}{s.name}
+                              </div>
+                              {s.description && <div className="mt-0.5 line-clamp-1 text-sm text-slate-500">{s.description}</div>}
+                              <div className="mt-1 flex items-center gap-3 text-sm font-semibold text-slate-500">
+                                <span className="text-emerald-600">{ils(s.price)}</span>
+                                <span className="flex items-center gap-1"><Timer size={14} />{minutesLabel(s.duration_minutes)}</span>
+                              </div>
+                            </div>
+                            {n === 0 ? (
+                              <button type="button" onClick={() => setQty(s.id, 1)} aria-label={`הוספת ${s.name}`}
+                                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-lg shadow-rose-500/30 transition hover:scale-105 active:scale-90">
+                                <Plus size={24} strokeWidth={2.75} />
+                              </button>
+                            ) : (
+                              <div className="flex shrink-0 items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-rose-200">
+                                <button type="button" onClick={() => setQty(s.id, n - 1)} aria-label="פחות" className="flex h-10 w-10 items-center justify-center rounded-full text-rose-600 transition hover:bg-rose-50 active:scale-90"><Minus size={20} strokeWidth={2.75} /></button>
+                                <span key={n} className="w-7 animate-pop-in text-center text-xl font-bold tabular-nums text-slate-900">{n}</span>
+                                <button type="button" onClick={() => setQty(s.id, n + 1)} disabled={n >= 20} aria-label="עוד" className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-500 text-white transition hover:bg-rose-600 active:scale-90 disabled:opacity-40"><Plus size={20} strokeWidth={2.75} /></button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              <div className={`sticky z-10 mt-6 rounded-2xl bg-slate-900 p-4 text-white shadow-2xl transition ${org.phone || org.whatsapp ? "bottom-24 sm:bottom-4" : "bottom-4"}`}>
+                {cartLines.length ? (
+                  <>
+                    <div className="flex items-center gap-2 text-sm text-white/70"><ShoppingBag size={16} />{cartLines.reduce((t, l) => t + l.qty, 0)} פריטים · {minutesLabel(cartTotal.minutes)}</div>
+                    <div className="mt-0.5 line-clamp-2 text-[15px] font-semibold">{cartTitle(cartLines)}</div>
+                    <button onClick={startCart} disabled={cartTotal.minutes > 16 * 60}
+                      className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-rose-500 to-pink-500 text-base font-bold shadow-lg transition active:scale-[0.98] disabled:opacity-50">
+                      <span key={cartTotal.price} className="animate-pop-in tabular-nums">{ils(cartTotal.price)}</span> · לבחירת מועד<ArrowLeft size={19} />
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 text-[15px] text-white/80"><ShoppingBag size={18} />לחצו + כדי להוסיף לביקור</div>
+                )}
+              </div>
+            </>
+          )}
+
+          {step === 0 && (!grouped || (group && !cartMode)) && (
             <>
               {grouped && <button onClick={() => setGroup(null)} className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-rose-600"><ArrowRight size={16} />{group === "*" ? comboLabel(groups) : group}</button>}
               <h2 className="text-2xl font-bold text-slate-900">איזה שירות תרצו להזמין?</h2>
@@ -511,6 +620,7 @@ export default function BookingFlow({ org, services }) {
           מופעל על ידי Pulse CRM <Heart size={13} className="animate-heartbeat fill-rose-400 text-rose-400" />
         </p>
       </div>
+      <ContactBar org={org} />
     </main>
   );
 }
